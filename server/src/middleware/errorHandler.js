@@ -9,6 +9,15 @@ export function notFound(req, res) {
 // eslint-disable-next-line no-unused-vars
 export function errorHandler(err, req, res, _next) {
   console.error('[error]', err);
+
+  if (err.name === 'MulterError') {
+    const message =
+      err.code === 'LIMIT_FILE_SIZE'
+        ? 'Resume must be 5MB or smaller'
+        : 'Could not process the uploaded file';
+    return res.status(400).json({ error: message });
+  }
+
   const status = err.status || 500;
   res.status(status).json({
     error: err.expose ? err.message : 'Internal server error',

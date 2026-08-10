@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser';
 import { env } from './config/env.js';
 import { configurePassport } from './config/passport.js';
 import authRoutes from './routes/authRoutes.js';
+import resumeRoutes from './routes/resumeRoutes.js';
 import { notFound, errorHandler } from './middleware/errorHandler.js';
 
 /** Build the Express application (Application Logic Tier, SDS §2.1). */
@@ -17,6 +18,7 @@ export function createApp() {
 
   app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
   app.use('/api/auth', authRoutes);
+  app.use('/api/resume', resumeRoutes);
 
   app.use(notFound);
   app.use(errorHandler);

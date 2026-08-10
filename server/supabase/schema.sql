@@ -23,6 +23,13 @@ create table if not exists public.users (
   -- connect flow succeeds; the access token itself lives in oauth_sessions.
   github_username     text,
   github_connected_at timestamptz,
+  -- Student's uploaded resume (FR 19-27). The file itself lives in the
+  -- 'resumes' Storage bucket at resume_storage_path; re-uploading overwrites
+  -- the same path, so these columns always describe the current resume.
+  resume_original_name text,
+  resume_storage_path  text,
+  resume_size_bytes    integer,
+  resume_uploaded_at   timestamptz,
   created_at     timestamptz not null default now(),
   updated_at     timestamptz not null default now(),
   -- One account per provider identity (supports existing-user detection, FR 6).
@@ -42,6 +49,12 @@ alter table public.users drop constraint if exists users_has_credential;
 alter table public.users add constraint users_has_credential check (
   (oauth_provider is not null and oauth_id is not null) or password_hash is not null
 );
+
+-- Idempotent upgrade path for databases created before resume upload existed.
+alter table public.users add column if not exists resume_original_name text;
+alter table public.users add column if not exists resume_storage_path text;
+alter table public.users add column if not exists resume_size_bytes integer;
+alter table public.users add column if not exists resume_uploaded_at timestamptz;
 
 -- ---------------------------------------------------------------------------
 -- oauth_sessions  (FR 7 — server-side session tokens; SDS §4.7.5 audit trail)

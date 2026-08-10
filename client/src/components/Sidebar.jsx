@@ -4,16 +4,15 @@ import { useAuth } from '../context/AuthContext.jsx';
 
 /**
  * Role-aware navigation shell matching the Figma dashboard sidebar.
- * Nav items reflect only Member 1's landing structure; feature screens
- * (Upload Resume, Candidates, Scores, …) are owned by other members and
- * appear as inactive placeholders until their modules land.
+ * Screens not yet built (Candidates, Scores, Skills Status, …) appear as
+ * inactive placeholders until their modules land.
  */
 const NAV_BY_ROLE = {
   student: {
     subtitle: 'Candidate Portal',
     links: [
       { to: '/student', label: 'Dashboard', end: true },
-      { to: '/student/upload', label: 'Upload Resume', disabled: true },
+      { to: '/student/resume', label: 'Upload Resume' },
       { to: '/student/github', label: 'Connect GitHub' },
       { to: '/student/skills', label: 'Skills Status', disabled: true },
     ],

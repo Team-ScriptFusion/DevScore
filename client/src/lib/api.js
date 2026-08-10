@@ -56,3 +56,31 @@ export const githubApi = {
   status: () => request('/auth/github/status'),
   disconnect: () => request('/auth/github/disconnect', { method: 'POST' }),
 };
+
+export const resumeApi = {
+  status: () => request('/resume/status'),
+  /**
+   * Upload/replace the resume (FR 19-27). Uses a bare fetch — multipart
+   * bodies must not get the `Content-Type: application/json` header the
+   * shared `request()` helper always sets.
+   */
+  upload: async (file) => {
+    const body = new FormData();
+    body.append('resume', file);
+    const res = await fetch('/api/resume/upload', {
+      method: 'POST',
+      body,
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      let message = `Upload failed (${res.status})`;
+      try {
+        message = (await res.json()).error || message;
+      } catch {
+        /* non-JSON error */
+      }
+      throw new Error(message);
+    }
+    return res.json();
+  },
+};

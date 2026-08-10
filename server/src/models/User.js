@@ -25,6 +25,9 @@ export function toPublicUser(row) {
     createdAt: row.created_at,
     githubUsername: row.github_username || null,
     githubConnectedAt: row.github_connected_at || null,
+    resumeFilename: row.resume_original_name || null,
+    resumeSizeBytes: row.resume_size_bytes || null,
+    resumeUploadedAt: row.resume_uploaded_at || null,
   };
 }
 
@@ -82,6 +85,40 @@ export async function clearGithubProfile(userId) {
   const { data, error } = await supabase
     .from('users')
     .update({ github_username: null, github_connected_at: null })
+    .eq('id', userId)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+/** Record a student's uploaded resume (FR 19-27). Re-uploading overwrites these fields. */
+export async function setResumeInfo(userId, { originalName, storagePath, sizeBytes }) {
+  const { data, error } = await supabase
+    .from('users')
+    .update({
+      resume_original_name: originalName,
+      resume_storage_path: storagePath,
+      resume_size_bytes: sizeBytes,
+      resume_uploaded_at: new Date().toISOString(),
+    })
+    .eq('id', userId)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+/** Clear a student's resume record (used if the storage upload fails after a prior success, or on delete). */
+export async function clearResumeInfo(userId) {
+  const { data, error } = await supabase
+    .from('users')
+    .update({
+      resume_original_name: null,
+      resume_storage_path: null,
+      resume_size_bytes: null,
+      resume_uploaded_at: null,
+    })
     .eq('id', userId)
     .select()
     .single();
