@@ -1,5 +1,11 @@
 import { env } from '../config/env.js';
 
+// Render's free tier spins a service down after 15 min idle; a cold start
+// can take 30-50s. Cap the wait so a sleeping parser fails fast (resume
+// upload still succeeds, skills just come back as 'failed') instead of
+// hanging the request until an upstream proxy times it out.
+const REQUEST_TIMEOUT_MS = 45_000;
+
 /**
  * Calls the cv_parser microservice (FR 28-32) with a resume buffer and
  * returns its categorized-skills result. Node's global fetch/FormData/Blob
@@ -13,6 +19,7 @@ export async function parseResumeBuffer(buffer, filename) {
     method: 'POST',
     headers: env.cvParser.apiKey ? { 'X-Api-Key': env.cvParser.apiKey } : {},
     body,
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
 
   if (!res.ok) {
