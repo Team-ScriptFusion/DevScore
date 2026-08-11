@@ -28,6 +28,10 @@ export function toPublicUser(row) {
     resumeFilename: row.resume_original_name || null,
     resumeSizeBytes: row.resume_size_bytes || null,
     resumeUploadedAt: row.resume_uploaded_at || null,
+    claimedSkills: row.claimed_skills || null,
+    skillsUncategorized: row.skills_uncategorized || null,
+    skillsExtractionStatus: row.skills_extraction_status || null,
+    skillsExtractedAt: row.skills_extracted_at || null,
   };
 }
 
@@ -118,6 +122,30 @@ export async function clearResumeInfo(userId) {
       resume_storage_path: null,
       resume_size_bytes: null,
       resume_uploaded_at: null,
+    })
+    .eq('id', userId)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+/**
+ * Record the outcome of skill extraction for a student's resume (FR 28-32).
+ * Called once immediately after upload (status 'pending'), then again once
+ * the parser responds (or fails) with the final status and results.
+ */
+export async function setSkillsExtraction(
+  userId,
+  { status, byCategory = null, uncategorized = null },
+) {
+  const { data, error } = await supabase
+    .from('users')
+    .update({
+      skills_extraction_status: status,
+      claimed_skills: byCategory,
+      skills_uncategorized: uncategorized,
+      skills_extracted_at: new Date().toISOString(),
     })
     .eq('id', userId)
     .select()

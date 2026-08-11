@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout.jsx';
+import SkillChips from '../components/SkillChips.jsx';
 import { recruiterApi } from '../lib/api.js';
 import { ResumeIcon, GithubMiningIcon } from '../components/FeatureIcons.jsx';
 
@@ -104,6 +105,21 @@ export default function CandidateProfile() {
               )}
             </div>
           </div>
+
+          {candidate.resumeVerified && (
+            <div className="card" style={{ marginTop: 20 }}>
+              <h3 style={{ marginTop: 0 }}>Claimed Skills</h3>
+              <p className="muted" style={{ marginTop: -8, marginBottom: 16 }}>
+                Extracted from the candidate&rsquo;s resume — not yet
+                verified against GitHub evidence.
+              </p>
+              <SkillChips
+                status={candidate.skillsStatus}
+                byCategory={candidate.claimedSkills}
+                uncategorized={candidate.skillsUncategorized}
+              />
+            </div>
+          )}
 
           <div className="placeholder" style={{ marginTop: 20 }}>
             Job Readiness Score &amp; Evidence Gap — coming once the scoring

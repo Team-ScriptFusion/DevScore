@@ -30,6 +30,14 @@ create table if not exists public.users (
   resume_storage_path  text,
   resume_size_bytes    integer,
   resume_uploaded_at   timestamptz,
+  -- Skills extracted from the resume by the CV parser (FR 28-32). Re-parsed
+  -- on every upload; claimed_skills mirrors parse_resume()'s "by_category"
+  -- shape: { "language": ["Python", ...], "framework": [...], ... }.
+  claimed_skills          jsonb,
+  skills_uncategorized    jsonb,
+  skills_extraction_status text
+    check (skills_extraction_status in ('pending', 'success', 'success_no_skills_found', 'failed')),
+  skills_extracted_at     timestamptz,
   created_at     timestamptz not null default now(),
   updated_at     timestamptz not null default now(),
   -- One account per provider identity (supports existing-user detection, FR 6).
@@ -55,6 +63,15 @@ alter table public.users add column if not exists resume_original_name text;
 alter table public.users add column if not exists resume_storage_path text;
 alter table public.users add column if not exists resume_size_bytes integer;
 alter table public.users add column if not exists resume_uploaded_at timestamptz;
+
+-- Idempotent upgrade path for databases created before skill extraction existed.
+alter table public.users add column if not exists claimed_skills jsonb;
+alter table public.users add column if not exists skills_uncategorized jsonb;
+alter table public.users add column if not exists skills_extraction_status text;
+alter table public.users add column if not exists skills_extracted_at timestamptz;
+alter table public.users drop constraint if exists users_skills_extraction_status_check;
+alter table public.users add constraint users_skills_extraction_status_check
+  check (skills_extraction_status in ('pending', 'success', 'success_no_skills_found', 'failed'));
 
 -- ---------------------------------------------------------------------------
 -- oauth_sessions  (FR 7 — server-side session tokens; SDS §4.7.5 audit trail)

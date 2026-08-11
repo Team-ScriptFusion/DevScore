@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import DashboardLayout from '../components/DashboardLayout.jsx';
+import SkillChips from '../components/SkillChips.jsx';
 import { resumeApi } from '../lib/api.js';
 
 function formatSize(bytes) {
@@ -8,8 +9,9 @@ function formatSize(bytes) {
 }
 
 /**
- * Upload Resume screen (FR 19-27). Accepts a PDF, stores it, and reports the
- * current upload state. Re-uploading replaces the existing file.
+ * Upload Resume screen (FR 19-32). Accepts a PDF, stores it, triggers skill
+ * extraction, and displays both the upload state and the extracted skills.
+ * Re-uploading replaces the resume and re-parses it.
  */
 export default function UploadResume() {
   const [status, setStatus] = useState(null);
@@ -66,7 +68,7 @@ export default function UploadResume() {
         </div>
       )}
 
-      <div className="card" style={{ maxWidth: 480 }}>
+      <div className="card" style={{ maxWidth: 480, marginBottom: 20 }}>
         {loading ? (
           <p>Checking resume status…</p>
         ) : status?.uploaded ? (
@@ -110,6 +112,21 @@ export default function UploadResume() {
           hidden
         />
       </div>
+
+      {status?.uploaded && (
+        <div className="card" style={{ maxWidth: 640 }}>
+          <h3 style={{ marginTop: 0 }}>Extracted Skills</h3>
+          <p className="muted" style={{ marginTop: -8, marginBottom: 16 }}>
+            This is what we found in your resume — recruiters see the same
+            list, alongside how much of it your GitHub activity backs up.
+          </p>
+          <SkillChips
+            status={status.skills?.status}
+            byCategory={status.skills?.byCategory}
+            uncategorized={status.skills?.uncategorized}
+          />
+        </div>
+      )}
     </DashboardLayout>
   );
 }

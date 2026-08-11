@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout.jsx';
+import SkillChips from '../components/SkillChips.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { githubApi, resumeApi } from '../lib/api.js';
 import { ResumeIcon, GithubMiningIcon } from '../components/FeatureIcons.jsx';
@@ -101,6 +102,20 @@ export default function StudentDashboard() {
           meta={githubDone ? `@${github.username}` : null}
         />
       </div>
+
+      {resumeDone && (
+        <div className="card" style={{ marginTop: 20 }}>
+          <h3 style={{ marginTop: 0 }}>Your Claimed Skills</h3>
+          <p className="muted" style={{ marginTop: -8, marginBottom: 16 }}>
+            Extracted from your resume — this is what recruiters see.
+          </p>
+          <SkillChips
+            status={resume.skills?.status}
+            byCategory={resume.skills?.byCategory}
+            uncategorized={resume.skills?.uncategorized}
+          />
+        </div>
+      )}
     </DashboardLayout>
   );
 }

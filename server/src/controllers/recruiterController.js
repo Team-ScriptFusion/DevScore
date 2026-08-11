@@ -15,6 +15,9 @@ function toCandidateSummary(row) {
     githubUsername: u.githubUsername,
     githubConnectedAt: u.githubConnectedAt,
     joinedAt: u.createdAt,
+    skillsStatus: u.skillsExtractionStatus,
+    claimedSkills: u.claimedSkills,
+    skillsUncategorized: u.skillsUncategorized,
   };
 }
 

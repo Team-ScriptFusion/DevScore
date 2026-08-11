@@ -23,6 +23,27 @@ function StatusBadge({ verified }) {
   );
 }
 
+const SKILLS_PREVIEW_LIMIT = 4;
+
+function SkillsPreview({ status, byCategory }) {
+  if (status !== 'success') return <span className="muted">—</span>;
+  const flat = Object.values(byCategory || {}).flat();
+  if (flat.length === 0) return <span className="muted">—</span>;
+
+  const shown = flat.slice(0, SKILLS_PREVIEW_LIMIT);
+  const remaining = flat.length - shown.length;
+  return (
+    <div className="skill-chips skill-chips--inline">
+      {shown.map((skill) => (
+        <span className="skill-chip" key={skill}>
+          {skill}
+        </span>
+      ))}
+      {remaining > 0 && <span className="skill-chip skill-chip--more">+{remaining}</span>}
+    </div>
+  );
+}
+
 /**
  * Recruiter dashboard (FR 8, 47-48) — adapted from the Figma "Recruiter
  * Dashboard" frame. Stat cards and the candidate table are wired to real
@@ -87,6 +108,7 @@ export default function RecruiterDashboard() {
                     <th>Email</th>
                     <th>Resume</th>
                     <th>GitHub</th>
+                    <th>Skills</th>
                     <th aria-label="Actions" />
                   </tr>
                 </thead>
@@ -105,6 +127,9 @@ export default function RecruiterDashboard() {
                       </td>
                       <td>
                         <StatusBadge verified={c.githubVerified} />
+                      </td>
+                      <td>
+                        <SkillsPreview status={c.skillsStatus} byCategory={c.claimedSkills} />
                       </td>
                       <td className="data-table__actions">
                         <Link to={`/recruiter/candidates/${c.id}`} className="btn-secondary">

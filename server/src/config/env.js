@@ -38,7 +38,14 @@ export const env = {
       process.env.GITHUB_CALLBACK_URL ||
       'http://localhost:5000/api/auth/github/callback',
   },
+  cvParser: {
+    url: process.env.CV_PARSER_URL || 'http://localhost:5001',
+    apiKey: process.env.CV_PARSER_API_KEY || '',
+  },
 };
+
+/** True only when the CV parser service URL is configured. */
+export const isCvParserConfigured = Boolean(env.cvParser.url);
 
 /** True only when Supabase credentials are present. */
 export const isSupabaseConfigured = Boolean(
