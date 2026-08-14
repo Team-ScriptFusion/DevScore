@@ -82,5 +82,3 @@ License & authors
 
 This project was developed by Team Script Fusion for an academic final-year project.
 See the repository contributors for details.
-
-If you'd like, I can also add a short Developer section with common troubleshooting steps, or expand the Getting Started section with Supabase CLI commands.
