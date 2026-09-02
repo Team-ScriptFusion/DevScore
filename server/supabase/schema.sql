@@ -229,6 +229,41 @@ alter table public.skill_verification drop constraint if exists skill_verificati
 alter table public.skill_verification add constraint skill_verification_evidence_repo_id_fkey
   foreign key (evidence_repo_id) references public.github_evidence (id) on delete set null;
 
+-- ---------------------------------------------------------------------------
+-- code_analysis  — per-repo structural complexity metrics (AST-based code
+-- analysis module). Replaced wholesale on each re-run (delete + reinsert),
+-- same pattern as github_evidence/skill_verification.
+-- ---------------------------------------------------------------------------
+create table if not exists public.code_analysis (
+  id                        uuid primary key default gen_random_uuid(),
+  user_id                   uuid not null references public.users (id) on delete cascade,
+  repo_name                 text not null,
+  language                  text,
+  avg_cyclomatic_complexity numeric,
+  total_functions           int,
+  total_lines               int,
+  max_nesting_depth         int,
+  included                  boolean not null default true,
+  excluded_reason           text check (excluded_reason in (
+                              'fork', 'empty', 'too_large', 'tutorial_clone_heuristic'
+                            )),
+  analyzed_at               timestamptz not null default now()
+);
+create index if not exists code_analysis_user_id_idx on public.code_analysis (user_id);
+
+-- ---------------------------------------------------------------------------
+-- code_analysis_summary  — per-student rollup, computed once by the
+-- code-analysis service's aggregation step and stored as-is. One row per
+-- user; replaced wholesale on each re-run.
+-- ---------------------------------------------------------------------------
+create table if not exists public.code_analysis_summary (
+  user_id                uuid primary key references public.users (id) on delete cascade,
+  avg_complexity_overall numeric,
+  total_loc_overall      int,
+  qualifying_repo_count  int not null default 0,
+  computed_at            timestamptz not null default now()
+);
+
 -- The API accesses these tables only through the service-role key, so RLS is
 -- enabled with no public policies (deny-by-default for anon/authenticated).
 alter table public.users enable row level security;
@@ -241,3 +276,5 @@ alter table public.job_roles enable row level security;
 alter table public.job_applications enable row level security;
 alter table public.github_evidence enable row level security;
 alter table public.skill_verification enable row level security;
+alter table public.code_analysis enable row level security;
+alter table public.code_analysis_summary enable row level security;
