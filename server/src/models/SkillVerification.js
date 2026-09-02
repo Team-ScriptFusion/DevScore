@@ -7,6 +7,10 @@ function toPublic(row) {
     verified: row.verified,
     method: row.method,
     confidence: row.confidence,
+    // The repo name behind the match, so this read path exposes the same
+    // per-skill fields the run path does. Null when no evidence row is
+    // linked, or when the linked one was cleared by a later re-fetch.
+    evidenceRepo: row.github_evidence?.repo_name ?? null,
     reason: row.reason,
     computedAt: row.computed_at,
   };
@@ -16,7 +20,9 @@ function toPublic(row) {
 export async function findByUserId(userId) {
   const { data, error } = await supabase
     .from('skill_verification')
-    .select('verified, method, confidence, reason, computed_at, skills(name, category)')
+    .select(
+      'verified, method, confidence, reason, computed_at, skills(name, category), github_evidence(repo_name)',
+    )
     .eq('user_id', userId);
   if (error) throw new Error(error.message);
   return data.map(toPublic);

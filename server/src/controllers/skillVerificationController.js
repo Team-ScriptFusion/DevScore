@@ -28,10 +28,11 @@ function serviceUnavailableError() {
   return err;
 }
 
-/** Writes every claimed skill as github_not_connected and responds. */
-async function respondNotConnected(res, studentId) {
-  const resume = await Resume.findByUserId(studentId);
-  const skillRows = resume ? await Resume.getSkillRows(resume.id) : [];
+/**
+ * Writes every claimed skill as github_not_connected and responds. `skillRows`
+ * is passed in by the caller, which has already loaded it.
+ */
+async function respondNotConnected(res, studentId, skillRows) {
   const persisted = buildNotConnectedResults(skillRows);
   await SkillVerification.replaceForUser(studentId, persisted);
 
@@ -39,11 +40,14 @@ async function respondNotConnected(res, studentId) {
     status: 'completed',
     skills_verified: 0,
     skills_unverified: persisted.length,
+    // Same per-skill key names as the normal path's results, so clients see
+    // one shape regardless of which branch produced it.
     results: skillRows.map((s) => ({
-      claimed_skill: s.name,
+      skill: s.name,
       verified: false,
       method: 'unverified',
       confidence: null,
+      evidence_repo: null,
       reason: 'github_not_connected',
     })),
   });
@@ -57,15 +61,34 @@ export async function runVerification(req, res, next) {
       return res.status(404).json({ error: 'Candidate not found' });
     }
 
+    // Load the claimed skills first: with none, there is nothing to verify
+    // either way, so short-circuit before spending a GitHub round-trip (and
+    // before rewriting the evidence tables) on a guaranteed-empty result.
+    // This deliberately wins over the not-connected branch when both apply —
+    // that branch produces the identical empty-results payload here anyway.
+    const resume = await Resume.findByUserId(studentId);
+    const skillRows = resume ? await Resume.getSkillRows(resume.id) : [];
+    if (skillRows.length === 0) {
+      await SkillVerification.replaceForUser(studentId, []);
+      return res.json({ status: 'completed', skills_verified: 0, skills_unverified: 0, results: [] });
+    }
+
     const [connection, session] = await Promise.all([
       GithubConnection.findByUserId(studentId),
       findActiveByUserAndProvider(studentId, 'github'),
     ]);
-    if (!connection || !session) {
-      return respondNotConnected(res, studentId);
+    // A GitHub *login* session carries no access token, and being newer it can
+    // shadow the GitHub *connect* session that does. A tokenless session is
+    // therefore no more usable than no session at all — report unverifiable
+    // rather than letting the Python service 400 and surface as a false 502.
+    if (!connection || !session?.encrypted_access_token) {
+      return respondNotConnected(res, studentId, skillRows);
     }
 
-    const force = req.query?.force === '1';
+    // Only the student themselves may force a refresh: each forced run spends
+    // up to ~61 calls of *their* GitHub quota, so a recruiter browsing
+    // candidates must not be able to burn it.
+    const force = req.user.role === ROLES.STUDENT && req.query?.force === '1';
     const latestFetch = await GithubEvidence.latestFetchedAt(studentId);
 
     let evidenceRows;
@@ -78,18 +101,11 @@ export async function runVerification(req, res, next) {
         fetchResult = await fetchGithubEvidence(connection.username, accessToken);
       } catch (err) {
         if (err.message === 'invalid_github_token') {
-          return respondNotConnected(res, studentId);
+          return respondNotConnected(res, studentId, skillRows);
         }
         return next(serviceUnavailableError());
       }
       evidenceRows = await GithubEvidence.replaceForUser(studentId, fetchResult.repos);
-    }
-
-    const resume = await Resume.findByUserId(studentId);
-    const skillRows = resume ? await Resume.getSkillRows(resume.id) : [];
-    if (skillRows.length === 0) {
-      await SkillVerification.replaceForUser(studentId, []);
-      return res.json({ status: 'completed', skills_verified: 0, skills_unverified: 0, results: [] });
     }
 
     const evidenceForMatching = evidenceRows.map((row) => ({
