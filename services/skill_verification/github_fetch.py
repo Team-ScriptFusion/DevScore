@@ -15,6 +15,12 @@ MAX_REPOS = 30
 # return what was gathered so far rather than failing the whole request.
 RATE_LIMIT_FLOOR = 10
 
+# GitHub answers an already-exhausted quota (or secondary/abuse limiting) with
+# 403 or 429 rather than a low X-RateLimit-Remaining header on a 200 — the
+# header-based floor above never gets a chance to engage. Treat these the same
+# way: stop, and return whatever was gathered so far.
+RATE_LIMITED_STATUSES = (403, 429)
+
 README_MAX_CHARS = 4000
 
 
@@ -65,6 +71,10 @@ def fetch_repos(github_username: str, access_token: str) -> dict:
     )
     if list_resp.status_code == 401:
         raise InvalidTokenError()
+    if list_resp.status_code in RATE_LIMITED_STATUSES:
+        # Quota already exhausted before we gathered anything — degrade to an
+        # empty evidence set rather than failing the whole request.
+        return {"repos": [], "rate_limited": True}
     list_resp.raise_for_status()
 
     candidates = [
@@ -87,6 +97,9 @@ def fetch_repos(github_username: str, access_token: str) -> dict:
         )
         if lang_resp.status_code == 401:
             raise InvalidTokenError()
+        if lang_resp.status_code in RATE_LIMITED_STATUSES:
+            # Nothing gathered for this repo at all — return the earlier ones.
+            return {"repos": repos, "rate_limited": True}
         languages = lang_resp.json() if lang_resp.ok else {}
         if _is_rate_limited(lang_resp):
             rate_limited = True
@@ -98,9 +111,14 @@ def fetch_repos(github_username: str, access_token: str) -> dict:
                 headers=_headers(access_token),
                 timeout=15,
             )
-            readme_text = _decode_readme(readme_resp)
-            if _is_rate_limited(readme_resp):
+            if readme_resp.status_code in RATE_LIMITED_STATUSES:
+                # Keep this repo's already-fetched languages, drop the README,
+                # and stop before the next repo.
                 rate_limited = True
+            else:
+                readme_text = _decode_readme(readme_resp)
+                if _is_rate_limited(readme_resp):
+                    rate_limited = True
 
         repos.append({
             "name": repo["name"],

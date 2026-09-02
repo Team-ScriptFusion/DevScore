@@ -61,6 +61,32 @@ def test_match_skills_route(client):
     assert body[0]["method"] == "direct_match"
 
 
+def test_fetch_evidence_unexpected_error_returns_json_500(client, monkeypatch):
+    def boom(username, token):
+        raise RuntimeError("upstream exploded")
+
+    monkeypatch.setattr(app_module, "fetch_repos", boom)
+    resp = client.post(
+        "/fetch-evidence",
+        json={"github_username": "octocat", "access_token": "tok"},
+    )
+    assert resp.status_code == 500
+    assert resp.get_json() == {"error": "fetch_evidence_failed"}
+
+
+def test_match_skills_unexpected_error_returns_json_500(client, monkeypatch):
+    def boom(claimed_skills, repos):
+        raise RuntimeError("model exploded")
+
+    monkeypatch.setattr(app_module, "match_skills", boom)
+    resp = client.post(
+        "/match-skills",
+        json={"claimed_skills": ["Python"], "repos": []},
+    )
+    assert resp.status_code == 500
+    assert resp.get_json() == {"error": "match_skills_failed"}
+
+
 def test_unauthorized_without_api_key(client, monkeypatch):
     monkeypatch.setattr(app_module, "API_KEY", "secret123")
     resp = client.get("/fetch-evidence")

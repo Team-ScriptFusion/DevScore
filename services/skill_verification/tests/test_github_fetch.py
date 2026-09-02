@@ -132,3 +132,63 @@ def test_fetch_repos_stops_early_when_rate_limited():
     # repo list + repo-a's languages call only — readme skipped once rate
     # limited, and repo-b/repo-c never reached.
     assert len(calls) == 2
+
+
+def test_fetch_repos_quota_already_exhausted_on_first_call():
+    """
+    An exhausted quota answers the very first call with 403/429 — there is no
+    successful response carrying a low X-RateLimit-Remaining to trip the floor
+    on, so this must degrade to an empty evidence set, not raise.
+    """
+    for status in (403, 429):
+        def fake_get(url, headers=None, params=None, timeout=None, _status=status):
+            return FakeResponse(_status, {"message": "API rate limit exceeded"})
+
+        with patch("github_fetch.requests.get", side_effect=fake_get):
+            result = fetch_repos("octocat", "token123")
+
+        assert result == {"repos": [], "rate_limited": True}
+
+
+def test_fetch_repos_quota_exhausted_mid_run_returns_repos_gathered_so_far():
+    repo_list = [_repo("repo-a"), _repo("repo-b")]
+
+    def fake_get(url, headers=None, params=None, timeout=None):
+        if url.endswith("/user/repos"):
+            return FakeResponse(200, repo_list)
+        if url.endswith("/languages"):
+            if "repo-b" in url:
+                return FakeResponse(403, {"message": "API rate limit exceeded"})
+            return FakeResponse(200, {"Python": 1000})
+        if url.endswith("/readme"):
+            return FakeResponse(200, {"content": ""})
+        raise AssertionError(f"unexpected URL {url}")
+
+    with patch("github_fetch.requests.get", side_effect=fake_get):
+        result = fetch_repos("octocat", "token123")
+
+    assert result["rate_limited"] is True
+    assert [r["name"] for r in result["repos"]] == ["repo-a"]
+
+
+def test_fetch_repos_quota_exhausted_on_readme_keeps_that_repo():
+    repo_list = [_repo("repo-a"), _repo("repo-b")]
+
+    def fake_get(url, headers=None, params=None, timeout=None):
+        if url.endswith("/user/repos"):
+            return FakeResponse(200, repo_list)
+        if url.endswith("/languages"):
+            return FakeResponse(200, {"Python": 1000})
+        if url.endswith("/readme"):
+            return FakeResponse(429, {"message": "API rate limit exceeded"})
+        raise AssertionError(f"unexpected URL {url}")
+
+    with patch("github_fetch.requests.get", side_effect=fake_get):
+        result = fetch_repos("octocat", "token123")
+
+    assert result["rate_limited"] is True
+    # repo-a's languages were already paid for, so it is kept with no README;
+    # repo-b is never reached.
+    assert [r["name"] for r in result["repos"]] == ["repo-a"]
+    assert result["repos"][0]["languages"] == {"Python": 1000}
+    assert result["repos"][0]["readme_text"] == ""
