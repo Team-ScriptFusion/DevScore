@@ -130,31 +130,49 @@ also enforces the cap defensively):
    left on disk after analysis, per the project's ethical/data-minimization
    commitment (Section 0 of the brief).
 
-Response: array of per-repo results —
+Response: `{ "repos": [...], "summary": {...} }` — `repos` is the per-repo
+result array; `summary` is computed by `aggregation.py` **in this Python
+service**, from the `included: true` rows only, before the response is
+returned. This resolves an ambiguity in an earlier draft of this spec
+(Section 3's diagram already assigned per-repo→per-student rollup to
+`aggregation.py`, but Section 7's Node-side wording read as if Node did
+that math itself) — aggregation happens once, in Python, and Node
+persists the result as-is rather than recomputing it. This also matches
+the module brief's own Section 11 API contract, which shows `summary` as
+part of the run response.
 ```json
-[
-  {
-    "repo_name": "my-ml-project",
-    "included": true,
-    "excluded_reason": null,
-    "language": "Python",
-    "avg_cyclomatic_complexity": 4.2,
-    "total_functions": 38,
-    "total_lines": 1204,
-    "max_nesting_depth": 5
-  },
-  {
-    "repo_name": "todo-app",
-    "included": false,
-    "excluded_reason": "fork",
-    "language": null,
-    "avg_cyclomatic_complexity": null,
-    "total_functions": null,
-    "total_lines": null,
-    "max_nesting_depth": null
+{
+  "repos": [
+    {
+      "repo_name": "my-ml-project",
+      "included": true,
+      "excluded_reason": null,
+      "language": "Python",
+      "avg_cyclomatic_complexity": 4.2,
+      "total_functions": 38,
+      "total_lines": 1204,
+      "max_nesting_depth": 5
+    },
+    {
+      "repo_name": "todo-app",
+      "included": false,
+      "excluded_reason": "fork",
+      "language": null,
+      "avg_cyclomatic_complexity": null,
+      "total_functions": null,
+      "total_lines": null,
+      "max_nesting_depth": null
+    }
+  ],
+  "summary": {
+    "avg_complexity_overall": 4.2,
+    "total_loc_overall": 1204,
+    "qualifying_repo_count": 1
   }
-]
+}
 ```
+(`qualifying_repo_count` counts only `included: true` repos — here just
+`my-ml-project`, since `todo-app` was excluded as a fork.)
 `language` is `lizard`'s detected language of the file with the most NLOC
 in that repo (a repo can span several languages; this reports the
 dominant one for the `language` column, while the numeric metrics
@@ -235,9 +253,13 @@ fetch).
 `findByUserId`, `findSummaryByUserId`, `latestAnalyzedAt`,
 `replaceForUser(userId, repoResults)` (delete-then-insert into
 `code_analysis`, same safe-ordering rule as Module 1: only after the
-Python call has already succeeded), and
-`upsertSummary(userId, summary)` (one row per user, computed from the
-just-replaced `code_analysis` rows).
+Python call has already succeeded), and `upsertSummary(userId, summary)`
+(one row per user). `summary` is always the object Python's
+`aggregation.py` computed and returned in the same response as
+`repoResults` — Node never recomputes this math itself. This is why a
+cache-hit read (below) doesn't need to "recompute" anything: the summary
+row already holds the last real computation, and reading it via
+`findSummaryByUserId` is sufficient.
 
 `server/src/controllers/codeAnalysisController.js`:
 
@@ -254,16 +276,20 @@ just-replaced `code_analysis` rows).
      absence of any `code_analysis` rows for a `user_id` already is that
      signal for a summary consumer).
   2. Cache check: if the newest `code_analysis.analyzed_at` for this user
-     is under 24h old and `?force=1` isn't set, skip the Python call and
-     recompute the summary from existing rows.
+     is under 24h old and `?force=1` isn't set, skip the Python call
+     entirely and respond with the existing `code_analysis_summary` row
+     (via `findSummaryByUserId`) as-is — no recomputation, since it
+     already holds the last real Python-computed result.
   3. `force` gated to `req.user.role === 'student'` only (mirrors Module
      1's fix for the same recruiter-forces-a-student's-quota problem).
   4. Otherwise fetch the student's repo list (`GET /user/repos` via a
      small inline call — **not** reusing Module 1's `github_fetch.py`
      for v1; see the coordination note below), pass up to 15 non-fork
-     public repo names to `analyzeRepos`, then `replaceForUser` with the
-     result.
-  5. Recompute and `upsertSummary`.
+     public repo names to `analyzeRepos`, then `replaceForUser(userId,
+     result.repos)`.
+  5. `upsertSummary(userId, result.summary)` — `result.summary` is
+     Python's already-computed object from the same response, stored
+     as-is.
   6. On a Python-service failure (non-401 error), respond 502
      `{"error": "code_analysis_service_unavailable"}` — same pattern as
      Module 1's `serviceUnavailableError()` (factor this into a small
