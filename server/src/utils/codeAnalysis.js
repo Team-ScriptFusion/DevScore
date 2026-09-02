@@ -25,7 +25,11 @@ export async function analyzeRepos(username, accessToken, repoNames) {
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (res.status === 401) {
-    throw new Error('invalid_github_token');
+    const body = await res.json().catch(() => ({}));
+    if (body.error === 'invalid_token') {
+      throw new Error('invalid_github_token');
+    }
+    throw new Error(`code_analysis analyze-repos responded 401: ${body.error || 'unauthorized'}`);
   }
   if (!res.ok) {
     throw new Error(`code_analysis analyze-repos responded ${res.status}`);
