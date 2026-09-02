@@ -147,9 +147,14 @@ which is reserved for the scoring module). `verified = score >= 0.65,
 method: "semantic_match", confidence: score` (confidence stored even when
 below threshold).
 
-Anything still unresolved: `verified: false, method: "unverified",
-confidence: null, reason: "no_evidence_found"` (repos existed, nothing
-matched) or `"no_public_repos"` (repos list was empty).
+If `repos` is empty, every unresolved skill short-circuits to
+`verified: false, method: "unverified", confidence: null,
+reason: "no_public_repos"` without running the embedding model at all —
+there is a repo name in every non-empty `repos` entry, so once at least one
+repo exists there is always *some* text to embed, which means a semantic
+score always gets computed. So the only other unresolved outcome is: score
+computed, below 0.65 → `verified: false, method: "semantic_match",
+confidence: score, reason: "below_confidence_threshold"`.
 
 Response: array of
 `{ skill, verified, method, confidence, evidence_repo, reason }`
@@ -231,7 +236,7 @@ create table if not exists public.skill_verification (
   evidence_repo_id uuid references public.github_evidence (id),
   reason           text check (reason in (
                      'github_not_connected', 'no_public_repos',
-                     'below_confidence_threshold', 'no_evidence_found'
+                     'below_confidence_threshold'
                    )),
   computed_at      timestamptz not null default now(),
   unique (user_id, skill_id)
