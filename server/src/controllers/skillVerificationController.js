@@ -105,7 +105,22 @@ export async function runVerification(req, res, next) {
         }
         return next(serviceUnavailableError());
       }
-      evidenceRows = await GithubEvidence.replaceForUser(studentId, fetchResult.repos);
+      if (fetchResult.rate_limited && fetchResult.repos.length === 0) {
+        // Quota was exhausted before anything at all could be gathered — this
+        // is not "the student has no public repos", so it must never
+        // overwrite good cached evidence or feed an empty list into matching
+        // (which would record every claimed skill as false-unverified).
+        // Fall back to whatever is already cached; only if there is nothing
+        // cached yet (first-ever fetch hit the rate limit immediately) do we
+        // fail loudly instead of persisting bogus "unverified" results.
+        const cachedRows = await GithubEvidence.findByUserId(studentId);
+        if (cachedRows.length === 0) {
+          return next(serviceUnavailableError());
+        }
+        evidenceRows = cachedRows;
+      } else {
+        evidenceRows = await GithubEvidence.replaceForUser(studentId, fetchResult.repos);
+      }
     }
 
     const evidenceForMatching = evidenceRows.map((row) => ({
