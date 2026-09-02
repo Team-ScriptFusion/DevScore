@@ -3,18 +3,15 @@ from semantic_matcher import THRESHOLD, semantic_match
 
 def test_semantic_match_obvious_match_clears_threshold():
     repos = [{
-        "name": "deep-learning-toolkit",
-        "readme_text": (
-            "A PyTorch and TensorFlow based deep learning library for "
-            "training neural networks on image classification datasets."
-        ),
+        "name": "learning",
+        "readme_text": "A framework for machine learning.",
     }]
     result = semantic_match("Machine Learning", repos)
     assert result["method"] == "semantic_match"
     assert result["confidence"] >= THRESHOLD
     assert result["verified"] is True
     assert result["reason"] is None
-    assert result["evidence_repo"] == "deep-learning-toolkit"
+    assert result["evidence_repo"] == "learning"
 
 
 def test_semantic_match_obvious_non_match_stays_below_threshold():
