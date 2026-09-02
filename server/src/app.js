@@ -9,6 +9,7 @@ import adminRoutes from './routes/adminRoutes.js';
 import recruiterRoutes from './routes/recruiterRoutes.js';
 import jobRoutes from './routes/jobRoutes.js';
 import skillVerificationRoutes from './routes/skillVerificationRoutes.js';
+import codeAnalysisRoutes from './routes/codeAnalysisRoutes.js';
 import { notFound, errorHandler } from './middleware/errorHandler.js';
 
 /** Build the Express application (Application Logic Tier, SDS §2.1). */
@@ -27,6 +28,7 @@ export function createApp() {
   app.use('/api/recruiter', recruiterRoutes);
   app.use('/api/jobs', jobRoutes);
   app.use('/api/skill-verification', skillVerificationRoutes);
+  app.use('/api/code-analysis', codeAnalysisRoutes);
 
   app.use(notFound);
   app.use(errorHandler);
