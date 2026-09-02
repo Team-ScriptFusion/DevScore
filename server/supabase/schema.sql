@@ -209,7 +209,10 @@ create table if not exists public.skill_verification (
   verified         boolean not null,
   method           text not null check (method in ('direct_match', 'semantic_match', 'unverified')),
   confidence       numeric check (confidence >= 0 and confidence <= 1),
-  evidence_repo_id uuid references public.github_evidence (id),
+  -- on delete set null: github_evidence rows are replaced wholesale on every
+  -- re-fetch (delete + reinsert), so prior-run references must not block that
+  -- delete — the verification row survives with no linked evidence repo.
+  evidence_repo_id uuid references public.github_evidence (id) on delete set null,
   reason           text check (reason in (
                      'github_not_connected', 'no_public_repos',
                      'below_confidence_threshold'
@@ -218,6 +221,13 @@ create table if not exists public.skill_verification (
   unique (user_id, skill_id)
 );
 create index if not exists skill_verification_user_id_idx on public.skill_verification (user_id);
+
+-- Idempotent upgrade path for databases created before evidence_repo_id got
+-- its on-delete behaviour: without it, GithubEvidence.replaceForUser's delete
+-- raises a foreign-key violation on every re-verification after the first.
+alter table public.skill_verification drop constraint if exists skill_verification_evidence_repo_id_fkey;
+alter table public.skill_verification add constraint skill_verification_evidence_repo_id_fkey
+  foreign key (evidence_repo_id) references public.github_evidence (id) on delete set null;
 
 -- The API accesses these tables only through the service-role key, so RLS is
 -- enabled with no public policies (deny-by-default for anon/authenticated).
