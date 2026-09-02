@@ -59,6 +59,24 @@ export async function getSkills(resumeId) {
   return shapeSkillRows(data);
 }
 
+/**
+ * Fetch a resume's extracted skills as raw rows (keeping skill_id) — for
+ * callers that need the id, not just the grouped display shape (e.g. skill
+ * verification, which writes one row per skill_id).
+ */
+export async function getSkillRows(resumeId) {
+  const { data, error } = await supabase
+    .from('resume_skills')
+    .select('skill_id, skills(name, category)')
+    .eq('resume_id', resumeId);
+  if (error) throw new Error(error.message);
+  return data.map((row) => ({
+    skillId: row.skill_id,
+    name: row.skills.name,
+    category: row.skills.category,
+  }));
+}
+
 /** Fetch extracted skills for many resumes at once, keyed by resume_id. */
 export async function getSkillsForResumes(resumeIds) {
   if (resumeIds.length === 0) return {};
