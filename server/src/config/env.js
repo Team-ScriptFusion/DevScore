@@ -42,10 +42,6 @@ export const env = {
     url: process.env.CV_PARSER_URL || 'http://localhost:5001',
     apiKey: process.env.CV_PARSER_API_KEY || '',
   },
-  skillVerification: {
-    url: process.env.SKILL_VERIFICATION_URL || 'http://localhost:5002',
-    apiKey: process.env.SKILL_VERIFICATION_API_KEY || '',
-  },
 };
 
 /** True only when the CV parser service URL is configured. */

@@ -180,55 +180,6 @@ create table if not exists public.job_applications (
 create index if not exists job_applications_job_id_idx on public.job_applications (job_id);
 create index if not exists job_applications_student_id_idx on public.job_applications (student_id);
 
--- ---------------------------------------------------------------------------
--- github_evidence  — raw per-repo GitHub evidence for a student (Phase 0 of
--- the skill-verification module). Replaced wholesale on each re-fetch
--- (delete + reinsert), same pattern as resume_skills.
--- ---------------------------------------------------------------------------
-create table if not exists public.github_evidence (
-  id             uuid primary key default gen_random_uuid(),
-  user_id        uuid not null references public.users (id) on delete cascade,
-  repo_name      text not null,
-  is_fork        boolean not null default false,
-  languages      jsonb not null default '{}'::jsonb,
-  readme_text    text,
-  last_pushed_at timestamptz,
-  fetched_at     timestamptz not null default now()
-);
-create index if not exists github_evidence_user_id_idx on public.github_evidence (user_id);
-
--- ---------------------------------------------------------------------------
--- skill_verification  — per-skill verification result (Phases 1-2), the Vi
--- input to the WVR scoring formula. One row per (user, skill); replaced
--- wholesale on each re-run.
--- ---------------------------------------------------------------------------
-create table if not exists public.skill_verification (
-  id               uuid primary key default gen_random_uuid(),
-  user_id          uuid not null references public.users (id) on delete cascade,
-  skill_id         uuid not null references public.skills (id) on delete cascade,
-  verified         boolean not null,
-  method           text not null check (method in ('direct_match', 'semantic_match', 'unverified')),
-  confidence       numeric check (confidence >= 0 and confidence <= 1),
-  -- on delete set null: github_evidence rows are replaced wholesale on every
-  -- re-fetch (delete + reinsert), so prior-run references must not block that
-  -- delete — the verification row survives with no linked evidence repo.
-  evidence_repo_id uuid references public.github_evidence (id) on delete set null,
-  reason           text check (reason in (
-                     'github_not_connected', 'no_public_repos',
-                     'below_confidence_threshold'
-                   )),
-  computed_at      timestamptz not null default now(),
-  unique (user_id, skill_id)
-);
-create index if not exists skill_verification_user_id_idx on public.skill_verification (user_id);
-
--- Idempotent upgrade path for databases created before evidence_repo_id got
--- its on-delete behaviour: without it, GithubEvidence.replaceForUser's delete
--- raises a foreign-key violation on every re-verification after the first.
-alter table public.skill_verification drop constraint if exists skill_verification_evidence_repo_id_fkey;
-alter table public.skill_verification add constraint skill_verification_evidence_repo_id_fkey
-  foreign key (evidence_repo_id) references public.github_evidence (id) on delete set null;
-
 -- The API accesses these tables only through the service-role key, so RLS is
 -- enabled with no public policies (deny-by-default for anon/authenticated).
 alter table public.users enable row level security;
@@ -239,5 +190,3 @@ alter table public.skills enable row level security;
 alter table public.resume_skills enable row level security;
 alter table public.job_roles enable row level security;
 alter table public.job_applications enable row level security;
-alter table public.github_evidence enable row level security;
-alter table public.skill_verification enable row level security;
