@@ -58,10 +58,14 @@ class ResumeProfile:
     text_chars: int = 0
     used_ocr: bool = False
     skills_section_found: bool = False
+    # Entries from the CV's Projects section. Used for project-level binding;
+    # skill extraction itself remains entirely cv_parser's.
+    projects: list[Any] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["claimed"] = [c.to_dict() for c in self.claimed]
+        d["projects"] = [p.to_dict() for p in self.projects]
         return d
 
 
@@ -83,6 +87,49 @@ class SourceFile:
 
 
 @dataclass
+class CommitAuthorship:
+    """
+    Who actually wrote the commits in a repository.
+
+    Counting "commits by this candidate" via GitHub's `?author=` filter only
+    ever returns what GitHub has already linked to the account, which hides the
+    case worth catching: a commit authored from a shared laptop or a
+    copy-pasted .gitconfig, where the name matches but the email does not (or
+    the reverse). Those are neither clearly theirs nor clearly someone else's,
+    so they get their own bucket and are excluded from the credited count
+    rather than silently inflating it.
+
+        mine      GitHub linked the commit to this account, or BOTH the
+                  committer name and the email match known identities
+        disputed  exactly one of name/email matches - ambiguous, not credited
+        other     neither matches; a collaborator, or an upstream commit
+                  inherited when the repository was seeded from a template
+    """
+
+    mine: int = 0
+    disputed: int = 0
+    other: int = 0
+    last_mine: str = ""
+    # Distinct author identities seen, for the report's explanation text.
+    disputed_names: list[str] = field(default_factory=list)
+
+    @property
+    def total(self) -> int:
+        return self.mine + self.disputed + self.other
+
+    @property
+    def ownership_ratio(self) -> float:
+        """Share of the log this candidate can be credited for."""
+        return self.mine / self.total if self.total else 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        d = asdict(self)
+        d["total"] = self.total
+        d["ownership_ratio"] = round(self.ownership_ratio, 3)
+        return d
+
+
+@dataclass
 class RepoEvidence:
     name: str
     full_name: str
@@ -101,8 +148,9 @@ class RepoEvidence:
     manifests: list[str] = field(default_factory=list)
     file_paths: list[str] = field(default_factory=list)
     fetched_files: list[SourceFile] = field(default_factory=list)
-    commits_by_owner: int = 0
-    last_owner_commit: str = ""
+    commits_by_owner: int = 0          # == authorship.mine, kept for readability
+    last_owner_commit: str = ""        # == authorship.last_mine
+    authorship: CommitAuthorship = field(default_factory=CommitAuthorship)
     # Repo-level craft signals, computed once in the miner.
     has_tests: bool = False
     has_ci: bool = False
@@ -140,6 +188,11 @@ class GithubProfile:
     created_at: str = ""
     repos: list[RepoEvidence] = field(default_factory=list)
     api_calls: int = 0
+    # Calls spent on THIS candidate, and how many repositories the budget
+    # allowed to be opened. Surfaced so a truncated run is visible rather than
+    # looking like a candidate with nothing to show.
+    calls_spent: int = 0
+    repos_deep_mined: int = 0
     rate_limit_remaining: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -152,6 +205,8 @@ class GithubProfile:
             "followers": self.followers,
             "created_at": self.created_at,
             "api_calls": self.api_calls,
+            "calls_spent": self.calls_spent,
+            "repos_deep_mined": self.repos_deep_mined,
             "rate_limit_remaining": self.rate_limit_remaining,
             "repos": [r.to_dict() for r in self.repos],
         }
@@ -359,6 +414,9 @@ class ReadinessReport:
     github: GithubProfile | None = None
     warnings: list[str] = field(default_factory=list)
     engine_version: str = ""
+    # CV project -> repository bindings. Reported, never scored: see
+    # engine/matching/binding.py for why a fuzzy match must not move a number.
+    project_bindings: list[Any] = field(default_factory=list)
 
     @property
     def band(self) -> str:
@@ -373,6 +431,33 @@ class ReadinessReport:
         if s >= 25:
             return "Thin evidence"
         return "Largely unevidenced"
+
+    def authorship_summary(self) -> dict[str, Any]:
+        """
+        Commit ownership across every mined repository.
+
+        Reported beside the score rather than folded into it: a candidate on a
+        four-person team legitimately owns a minority of their own repository's
+        log, and deflating them for collaborating would punish exactly the
+        behaviour the degree programme asks for.
+        """
+        mine = disputed = other = 0
+        names: list[str] = []
+        if self.github:
+            for repo in self.github.repos:
+                mine += repo.authorship.mine
+                disputed += repo.authorship.disputed
+                other += repo.authorship.other
+                names.extend(repo.authorship.disputed_names)
+        total = mine + disputed + other
+        return {
+            "mine": mine,
+            "disputed": disputed,
+            "other": other,
+            "total": total,
+            "ownership_ratio": round(mine / total, 3) if total else 0.0,
+            "disputed_identities": sorted(set(names))[:5],
+        }
 
     def gap_view(self) -> dict[str, list[str]]:
         """The Evidence Gap visualisation, reduced to three buckets."""
@@ -408,6 +493,8 @@ class ReadinessReport:
             "category_scores": {k: round(v, 1) for k, v in self.category_scores.items()},
             "evidence_gap": self.gap_view(),
             "verdicts": [v.to_dict() for v in self.verdicts],
+            "project_bindings": [b.to_dict() for b in self.project_bindings],
+            "authorship": self.authorship_summary(),
             "warnings": self.warnings,
         }
         if include_raw:

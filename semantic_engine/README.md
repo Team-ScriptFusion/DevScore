@@ -15,7 +15,7 @@ Job Readiness Score.
 ```bash
 cd semantic_engine
 pip install -r requirements.txt
-python tests/test_engine.py        # 53 tests
+python tests/test_engine.py        # 72 tests
 ```
 
 Every command below is run from `semantic_engine/`. Put the collected CVs in
@@ -139,7 +139,7 @@ Run the tests:
 python tests/test_engine.py          # or: python -m pytest tests -q
 ```
 
-53 tests, every one anchored to a failure mode that would produce a *plausible
+72 tests, every one anchored to a failure mode that would produce a *plausible
 but wrong score* rather than a crash — a crash gets noticed, a candidate quietly
 scored 12 points low does not.
 
@@ -241,6 +241,103 @@ components.
    the strength of six files in two of them.
 
 ---
+
+## Beyond the skill list: projects and authorship
+
+Skill-level matching asks *"does React appear anywhere in this candidate's
+repositories?"*. Two further checks ask sharper questions.
+
+### CV project ↔ repository binding
+
+`engine/resume/projects.py` slices the CV's **Projects** section into entries —
+title, description, an explicit `Technologies:` stack, and any
+`github.com/owner/repo` link the entry carries. `engine/matching/binding.py`
+then attaches each entry to a repository and checks whether that repository
+shows any sign of the stack the CV attributes to it.
+
+```
+MISMATCH     Smart Gym Management & Retention   -> gym-management-system  [name_match 69%]
+  claims PostgreSQL — no sign of it in that repository
+CONSISTENT   Lanka Mall E-Commerce Platform     -> my-ecommerce-site      [explicit_url]
+NOT SAMPLED  Vendora — SaaS E-Commerce Admin    -> Vendora----SaaS-E-...  [name_match 81%]
+```
+
+That is a different class of finding from "React: no public evidence". One is an
+absence; the other is a specific claim checked in the exact place the candidate
+pointed to.
+
+**Three rules keep it from becoming an accusation engine:**
+
+1. **A repository that was never sampled makes no claim.** This was a real bug,
+   caught on live data: a gym-management project was reported as *"claims
+   MongoDB and Node.js, its repository shows none"* when that repository
+   contains `server/package.json` declaring exactly those — the file sampler had
+   spent its budget on the client folder and never opened the backend. Bindings
+   now carry `inspected`, and an uninspected repository yields no `missing_skills`.
+
+2. **A conflict must be absent from *every* channel** — languages, dependency
+   manifests, imports and idioms — not just from sampled code. Skill scoring
+   demands real code because it measures depth; an accusation about one project
+   carries the opposite burden.
+
+3. **Bindings never move the score.** `explicit_url` is certain, `name_match` is
+   a guess, and guesses compound. Folding a fuzzy string match into a number a
+   recruiter reads as objective is exactly the false precision this project
+   exists to remove. The finding is the value; the number stays out of it.
+
+A zero-token-overlap match is also rejected outright — *"Fabric Defect Detection
+System"* was binding to a repository called `FIVORA` on description text alone.
+
+### Commit authorship: mine / disputed / other
+
+Counting commits with GitHub's `?author=` filter only returns what GitHub has
+*already* linked to the account, which hides the case worth catching. The log is
+fetched unfiltered instead — the same single request — and sorted locally:
+
+| Bucket | Meaning |
+|---|---|
+| `mine` | GitHub linked the commit to this account, **or** both name and email match |
+| `disputed` | Exactly one of name/email matches — ambiguous, credited to nobody |
+| `other` | Neither matches: a collaborator, or history inherited from a template |
+
+`disputed` is the shared-laptop / copy-pasted-`.gitconfig` case. It is excluded
+from the credited count rather than silently inflating it, and reported so a
+recruiter can ask.
+
+A learning pass runs first: addresses GitHub *has* linked to the account are
+collected, then used to judge commits it could not link. Without it, a candidate
+committing from a personal address they never registered on GitHub would look
+like a stranger in their own repository.
+
+Ownership is **reported, not scored** — a student on a four-person team
+legitimately owns a minority of their own repository's log, and deflating them
+for collaborating would punish the behaviour the degree asks for.
+
+### Per-candidate API budget
+
+The disk cache makes re-runs free but does nothing for the first pass, and a
+40-candidate cohort against a fresh 5,000/hour quota is exactly when that
+matters. `batch.py` now reads the remaining quota and divides it:
+
+```
+rate limit: 4870 calls left -> budgeting 109 per candidate across 40
+```
+
+Every candidate gets the same allowance, so the *ordering of the folder* stops
+being a scoring factor — previously early candidates mined deeply and everyone
+after them was scored on less evidence. Exceeding the budget stops further deep
+mining, keeps what was already gathered, and records why:
+
+```
+per-candidate API budget of 40 calls reached after 3 repositories
+```
+
+which surfaces as a report warning. Repositories are also pre-ranked on the
+repo-list payload *before* any language call, so the long tail of small repos no
+longer costs one request each (a 22-repo candidate: 76 → 69 calls, score
+unchanged at 52.0 → 51.8). The dominant cost remains trees and file fetches for
+deep-mined repositories; the budget is what makes a cold run plannable, not the
+pre-ranking.
 
 ## How the code is judged
 
@@ -542,6 +639,8 @@ limit of the method rather than a property of the candidate.
 engine/
   resume/parser.py       thin ADAPTER over cv_parser (see below)
   resume/identity.py     GitHub handle + candidate name — what cv_parser omits
+  resume/projects.py     CV Projects section, entry by entry
+  matching/binding.py    CV project <-> repository binding and conflicts
   ontology.py            evidence channels, derived weights, cv_parser crosswalk
   models.py              dataclasses; ReadinessReport is self-explaining
   github/client.py       REST client: disk+ETag cache, rate-limit budget guard
@@ -562,7 +661,7 @@ batch.py                 cohort runner → scores.csv, verdicts.csv, summary.md
 tools/ablation.py        boolean vs continuous vs expert baseline
 tools/calibrate_weights.py   re-derive scarcity from job-description data
 supabase/schema.sql      persistence tables for Implementation 01's database
-tests/test_engine.py     53 tests, all on silent-failure paths
+tests/test_engine.py     72 tests, all on silent-failure paths
 ```
 
 ---

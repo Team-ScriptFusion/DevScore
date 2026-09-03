@@ -90,6 +90,7 @@ import cv_parser as team_cv_parser  # noqa: E402  (path set above)
 from .. import ontology  # noqa: E402
 from ..models import ClaimedSkill, ResumeProfile  # noqa: E402
 from .identity import extract_github, extract_person_name  # noqa: E402
+from .projects import extract_projects  # noqa: E402
 
 # cv_parser categories that describe process or tooling rather than code.
 # Used only to label unmapped claims sensibly on the dashboard.
@@ -233,6 +234,9 @@ def parse_resume(pdf_path: str | Path) -> ResumeProfile:
     profile.claimed = _to_claimed_skills(extraction)
 
     # -- identity, the part cv_parser does not do ---------------------------
+    # Project entries, for project-level binding. cv_parser's dictionary_scan
+    # is injected so the skill vocabulary stays in one place.
+    profile.projects = extract_projects(text, team_cv_parser.dictionary_scan)
     profile.person_name = extract_person_name(text)
     profile.name_source = "cv" if profile.person_name else "filename"
     profile.github_urls, profile.github_username = extract_github(text, annotation_urls)

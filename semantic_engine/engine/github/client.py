@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import http.client
 import json
 import os
 import time
@@ -238,12 +239,15 @@ class GitHubClient:
 
                 raise GitHubError(f"HTTP {err.code} for {url}") from err
 
-            except OSError as err:
-                # Catches URLError, TimeoutError and — the one that actually
-                # bit during a real batch run — ConnectionResetError, which
-                # GitHub throws when it drops a keep-alive connection
-                # mid-stream. All three are transient and all three are
-                # subclasses of OSError, so they retry together.
+            except (OSError, http.client.HTTPException, json.JSONDecodeError) as err:
+                # Every transient way a GitHub response can fail to arrive:
+                #   OSError      URLError, TimeoutError, and ConnectionResetError
+                #                (GitHub dropping a keep-alive mid-stream)
+                #   HTTPException  IncompleteRead — the body was cut short. Not
+                #                an OSError, so an earlier version let it escape
+                #                and kill the candidate being scored.
+                #   JSONDecodeError  a truncated body that still read cleanly.
+                # All are worth retrying; none should end a cohort run.
                 if cached is not None:
                     return cached.body
                 if attempt == self.max_retries - 1:
@@ -334,11 +338,21 @@ class GitHubClient:
         except (ValueError, TypeError):
             return ""
 
-    def commits_by(self, full_name: str, author: str, max_pages: int = 1) -> list[dict[str, Any]]:
+    def commits(self, full_name: str, max_pages: int = 1) -> list[dict[str, Any]]:
+        """
+        Recent commits, UNFILTERED by author.
+
+        Deliberately not `?author=<username>`. Filtering server-side returns
+        only what GitHub already attributes to the account, which makes the
+        interesting cases invisible: a commit authored under a different email
+        on a shared or misconfigured machine never appears, so it can be neither
+        credited nor questioned. Fetching the raw log costs exactly the same one
+        request and lets `miner.classify_authorship` sort them out locally.
+        """
         try:
             return self.paginate(
                 f"/repos/{full_name}/commits",
-                params={"author": author, "per_page": 100},
+                params={"per_page": 100},
                 max_pages=max_pages,
             )
         except GitHubError:

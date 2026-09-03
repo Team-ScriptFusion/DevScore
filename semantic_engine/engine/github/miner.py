@@ -41,7 +41,7 @@ import re
 from datetime import datetime, timezone
 
 from .. import ontology
-from ..models import GithubProfile, RepoEvidence, SourceFile
+from ..models import CommitAuthorship, GithubProfile, RepoEvidence, SourceFile
 from .client import GitHubClient, GitHubError, RateLimitExhausted
 
 # ---------------------------------------------------------------------------
@@ -199,6 +199,108 @@ def parse_manifest(name: str, text: str) -> set[str]:
 
 
 # ---------------------------------------------------------------------------
+# Commit authorship
+# ---------------------------------------------------------------------------
+
+def _normalise_person(value: str) -> str:
+    """Fold a display name for comparison: lowercase, alphanumerics only."""
+    return "".join(ch for ch in (value or "").lower() if ch.isalnum())
+
+
+def known_identities(username: str, display_name: str) -> tuple[set[str], set[str]]:
+    """
+    (name forms, email forms) that count as this candidate.
+
+    GitHub's noreply addresses are included because they are what the web UI
+    and most GitHub Desktop setups commit under, and a candidate whose whole
+    history is web-edited would otherwise look like a stranger in their own
+    repository.
+    """
+    names = {_normalise_person(username)}
+    if display_name:
+        names.add(_normalise_person(display_name))
+        # "Anura Perera" -> also match a bare "anura"
+        first = display_name.split()[0] if display_name.split() else ""
+        if len(first) > 3:
+            names.add(_normalise_person(first))
+    names.discard("")
+
+    emails = {
+        f"{username.lower()}@users.noreply.github.com",
+    }
+    return names, emails
+
+
+def classify_authorship(
+    commits: list[dict],
+    username: str,
+    display_name: str = "",
+) -> CommitAuthorship:
+    """
+    Sort a repository's commit log into mine / disputed / other.
+
+    Two passes on purpose. The first learns which raw email addresses GitHub
+    itself attributes to this account; the second uses that learned set to
+    judge commits GitHub could NOT attribute (author object null, because the
+    email is not registered on the account). Without the learning pass a
+    candidate who commits from a personal address that is simply not added to
+    their GitHub profile would have every such commit marked `other`.
+    """
+    result = CommitAuthorship()
+    if not commits:
+        return result
+
+    names, emails = known_identities(username, display_name)
+    login = username.lower()
+
+    # Pass 1 — learn addresses GitHub has already linked to this account.
+    for commit in commits:
+        author = commit.get("author") or {}
+        if (author.get("login") or "").lower() == login:
+            email = ((commit.get("commit") or {}).get("author") or {}).get("email") or ""
+            if email and "noreply" not in email:
+                emails.add(email.lower())
+
+    # Pass 2 — classify.
+    disputed_names: set[str] = set()
+    for commit in commits:
+        author = commit.get("author") or {}
+        meta = (commit.get("commit") or {}).get("author") or {}
+        commit_login = (author.get("login") or "").lower()
+        commit_name = meta.get("name") or ""
+        commit_email = (meta.get("email") or "").lower()
+        when = meta.get("date") or ""
+
+        if commit_login == login:
+            bucket = "mine"
+        elif commit_login:
+            bucket = "other"          # GitHub attributes it to someone else
+        else:
+            name_match = _normalise_person(commit_name) in names
+            email_match = commit_email in emails
+            if name_match and email_match:
+                bucket = "mine"
+            elif name_match or email_match:
+                bucket = "disputed"
+            else:
+                bucket = "other"
+
+        if bucket == "mine":
+            result.mine += 1
+            if when > result.last_mine:
+                result.last_mine = when
+        elif bucket == "disputed":
+            result.disputed += 1
+            if commit_name:
+                disputed_names.add(f"{commit_name} <{commit_email or 'no email'}>")
+        else:
+            result.other += 1
+
+    result.disputed_names = sorted(disputed_names)[:4]
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Relevance ranking
 # ---------------------------------------------------------------------------
 
@@ -209,6 +311,32 @@ def _skill_languages(claimed: list[str]) -> set[str]:
         if skill:
             langs.update(skill.languages)
     return langs
+
+
+def prerank_repos(repos: list[RepoEvidence], claimed: list[str]) -> list[RepoEvidence]:
+    """
+    Order repositories using ONLY what the repo-list response already gave us.
+
+    This runs before any language call, so it cannot look at language bytes —
+    that is the whole point. It ranks on size, recency, stars and whether the
+    name or description mentions something the CV claims, which is enough to
+    put the repositories worth paying for at the top.
+    """
+    claimed_tokens = {c.lower() for c in claimed}
+    for skill_name in list(claimed_tokens):
+        skill = ontology.get(skill_name) if hasattr(ontology, "get") else None
+        if skill:
+            claimed_tokens.update(a.lower() for a in skill.all_aliases)
+
+    def score(repo: RepoEvidence) -> float:
+        haystack = f"{repo.name} {repo.description}".lower().replace("-", " ").replace("_", " ")
+        mentions = sum(1 for token in claimed_tokens if token and token in haystack)
+        size_signal = min(repo.size_kb / 1500.0, 1.0)
+        recency_signal = max(0.0, 1.0 - months_since(repo.pushed_at) / 36.0)
+        star_signal = min(repo.stars / 20.0, 0.5)
+        return min(mentions, 4) * 0.5 + size_signal + recency_signal + star_signal
+
+    return sorted(repos, key=score, reverse=True)
 
 
 def rank_repos(repos: list[RepoEvidence], claimed: list[str]) -> list[RepoEvidence]:
@@ -294,13 +422,32 @@ def mine_profile(
     client: GitHubClient | None = None,
     *,
     max_repos: int = 40,
+    max_repos_languages: int = 18,
     max_repos_deep: int = 12,
     files_per_repo: int = 10,
     max_files_total: int = 70,
     include_forks: bool = False,
+    call_budget: int | None = None,
 ) -> GithubProfile:
     client = client or GitHubClient()
     profile = GithubProfile(username=username)
+
+    # Per-candidate spend cap.
+    #
+    # The disk cache makes RE-runs free, but it does nothing for the first pass,
+    # and a 40-candidate cohort against a fresh 5,000/hour budget is exactly
+    # when this matters. Without a cap the run is unplannable: early candidates
+    # mine deeply, the budget runs out, and everyone after them is scored on
+    # less evidence than everyone before — a systematic bias in favour of
+    # whoever happens to sort first.
+    #
+    # With a cap, every candidate gets the same allowance and the shortfall is
+    # visible instead of silent. Exceeding it stops further deep mining; it
+    # never abandons what has already been gathered.
+    start_calls = client.calls
+
+    def budget_spent() -> bool:
+        return call_budget is not None and (client.calls - start_calls) >= call_budget
 
     try:
         user = client.user(username)
@@ -345,8 +492,17 @@ def mine_profile(
             topics=list(raw.get("topics") or []),
         ))
 
-    # Language stats for every non-fork repo — cheap and needed for breadth.
-    for repo in shallow:
+    # Language stats cost ONE CALL PER REPOSITORY, and a student with 40 repos
+    # therefore spent 40 calls before any evidence was read — the single largest
+    # line in the per-candidate budget, most of it on repos that would never be
+    # mined deeply anyway.
+    #
+    # So repositories are pre-ranked on the data the repo LIST already returned
+    # (size, recency, stars, and whether the name or description mentions
+    # anything the CV claims), and only the top `max_repos_languages` get a
+    # language call. Breadth still sees plenty; the tail that contributed one
+    # ambient hit at best no longer costs a request each.
+    for repo in prerank_repos(shallow, claimed_skills)[:max_repos_languages]:
         if repo.size_kb == 0:
             continue
         try:
@@ -361,7 +517,15 @@ def mine_profile(
     ranked = rank_repos(usable, claimed_skills)
 
     files_fetched = 0
+    repos_deep_mined = 0
     for repo in ranked[:max_repos_deep]:
+        if budget_spent():
+            profile.error = (
+                f"per-candidate API budget of {call_budget} calls reached after "
+                f"{repos_deep_mined} repositories; the rest were not opened"
+            )
+            break
+        repos_deep_mined += 1
         try:
             tree, truncated = client.tree(repo.full_name, repo.default_branch)
         except RateLimitExhausted:
@@ -427,14 +591,18 @@ def mine_profile(
             ))
             files_fetched += 1
 
-        # Authorship + recency, straight from the commit log.
-        commits = client.commits_by(repo.full_name, username)
-        repo.commits_by_owner = len(commits)
-        if commits:
-            when = (commits[0].get("commit") or {}).get("author", {}).get("date") or ""
-            repo.last_owner_commit = when
+        # Authorship + recency, straight from the commit log. The log is
+        # fetched unfiltered and sorted locally so that commits GitHub cannot
+        # attribute (unregistered email) are visible as `disputed` rather than
+        # invisible — same one request either way.
+        commits = client.commits(repo.full_name)
+        repo.authorship = classify_authorship(commits, username, profile.name)
+        repo.commits_by_owner = repo.authorship.mine
+        repo.last_owner_commit = repo.authorship.last_mine
 
     profile.repos = ranked
+    profile.repos_deep_mined = repos_deep_mined
+    profile.calls_spent = client.calls - start_calls
     profile.api_calls = client.calls
     profile.rate_limit_remaining = client.rate_remaining
     return profile

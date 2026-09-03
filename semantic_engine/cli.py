@@ -101,6 +101,33 @@ def print_report(report) -> None:
                   f"{' …' if len(v['repos']) > 4 else ''} · "
                   f"{v['files_analyzed']} files, {v['loc_analyzed']:,} LOC{RESET}")
 
+    bindings = d.get("project_bindings") or []
+    if bindings:
+        print(f"\n  {BOLD}CV projects vs. repositories{RESET}")
+        for b in bindings:
+            if b["repo"] and b["has_conflict"]:
+                colour, tag = RED, "MISMATCH"
+            elif b["repo"] and b["inspected"]:
+                colour, tag = GREEN, "CONSISTENT"
+            elif b["repo"]:
+                colour, tag = DIM, "NOT SAMPLED"
+            else:
+                colour, tag = DIM, "NO REPO"
+            how = b["method"] + (f" {b['confidence']:.0%}" if b["method"] == "name_match" else "")
+            print(f"    {colour}{tag:<12}{RESET} {b['project_title'][:34]:<34} "
+                  f"{DIM}-> {b['repo'] or '—'}  [{how}]{RESET}")
+            if b["has_conflict"]:
+                print(f"      {RED}claims {', '.join(b['missing_skills'])}{RESET}"
+                      f"{DIM} — no sign of it in that repository{RESET}")
+
+    if d.get("github_username"):
+        auth = d.get("authorship") or {}
+        if auth.get("total"):
+            print(f"\n  {BOLD}Commit authorship{RESET}  "
+                  f"{auth['mine']} theirs · {auth['disputed']} disputed · "
+                  f"{auth['other']} others  "
+                  f"{DIM}({auth['ownership_ratio']:.0%} of the sampled log){RESET}")
+
     unrecognised = [v for v in d["verdicts"] if v["category"] == "uncategorized"]
     if unrecognised:
         print(f"\n  {DIM}Listed but not in the ontology: "

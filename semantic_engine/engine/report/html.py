@@ -253,6 +253,71 @@ footer{margin-top:40px;color:var(--muted);font-size:12px;border-top:1px solid va
 """
 
 
+def _bindings_block(d: dict) -> str:
+    """CV projects against the repositories they bind to."""
+    bindings = d.get("project_bindings") or []
+    auth = d.get("authorship") or {}
+    if not bindings and not auth.get("total"):
+        return ""
+
+    rows = []
+    for b in bindings:
+        if b["repo"] and b["has_conflict"]:
+            cls, label = "gap", "Mismatch"
+        elif b["repo"] and b["inspected"]:
+            cls, label = "verified", "Consistent"
+        elif b["repo"]:
+            cls, label = "neutral", "Not sampled"
+        else:
+            cls, label = "neutral", "No repository"
+        how = b["method"].replace("_", " ")
+        if b["method"] == "name_match":
+            how += f" &middot; {b['confidence']:.0%}"
+        rows.append(
+            f"<tr><td><span class=\"pill {cls}\">{label}</span></td>"
+            f"<td>{html.escape(b['project_title'])}</td>"
+            f"<td class=\"dim\">{html.escape(b['repo'] or '—')}</td>"
+            f"<td class=\"dim\">{how}</td>"
+            f"<td>{html.escape(b['explanation'])}</td></tr>"
+        )
+
+    table = (
+        '<div class="tablewrap"><table class="metrics"><thead><tr>'
+        "<th></th><th>CV project</th><th>Repository</th><th>Matched by</th>"
+        "<th>Finding</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table></div>"
+        if rows else ""
+    )
+
+    authorship = ""
+    if auth.get("total"):
+        disputed_note = ""
+        if auth.get("disputed"):
+            disputed_note = (
+                f" {auth['disputed']} commit(s) carry a half-matching identity "
+                "(name or email, not both) and are credited to nobody: "
+                + html.escape(", ".join(auth.get("disputed_identities", [])[:3]))
+                + "."
+            )
+        authorship = (
+            f'<p class="repos"><strong>Commit authorship.</strong> '
+            f"{auth['mine']} of {auth['total']} commits in the mined repositories "
+            f"({auth['ownership_ratio']:.0%}) are attributable to this candidate; "
+            f"{auth['other']} belong to collaborators.{disputed_note} "
+            "Reported, not scored — owning a minority of a team repository is "
+            "normal, and deflating a score for collaborating would punish the "
+            "behaviour the degree asks for.</p>"
+        )
+
+    return f"""
+  <h2>CV projects &mdash; claimed vs. repository</h2>
+  {table}
+  {authorship}
+  <p class="repos">Project matching is fuzzy unless the CV links a repository
+     directly, so these findings are shown for a recruiter to ask about and are
+     deliberately <strong>not counted in the score</strong>. A project whose
+     repository was never sampled makes no claim either way.</p>"""
+
+
 def render_report(report: ReadinessReport) -> str:
     d = report.to_dict()
     counts = d["counts"]
@@ -302,6 +367,8 @@ def render_report(report: ReadinessReport) -> str:
     </div>
     <div class="card">{_radar(d["category_scores"]) or "<p class='sub'>Not enough verified areas to chart.</p>"}</div>
   </div>
+
+  {_bindings_block(d)}
 
   <h2>Evidence gap &mdash; claimed skills</h2>
   {"".join(_verdict_row(v) for v in scored_rows) or "<p class='sub'>No verifiable technical claims were recognised in this CV.</p>"}

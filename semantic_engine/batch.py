@@ -162,6 +162,22 @@ def run(args) -> int:
     append = bool(skip) and scores_path.exists()
 
     client = GitHubClient(cache_dir=args.cache, offline=args.offline)
+
+    # Derive a fair per-candidate allowance from what is actually left, so the
+    # last candidate in the run is scored on the same evidence budget as the
+    # first. Without this the ordering of the folder silently becomes a scoring
+    # factor.
+    call_budget = args.budget_per_candidate or None
+    if call_budget is None and not args.offline and picked:
+        try:
+            limits = client.get("/rate_limit")
+            remaining = int(limits["resources"]["core"]["remaining"])
+            call_budget = max(25, int((remaining * 0.9) / max(1, len(picked))))
+            print(f"rate limit: {remaining} calls left -> budgeting "
+                  f"{call_budget} per candidate across {len(picked)}\n")
+        except Exception:
+            call_budget = None
+
     if not client.token and not args.offline:
         print("WARNING: no GitHub token (GITHUB_TOKEN or `gh auth login`). "
               "60 requests/hour will not get you through a cohort.\n")
@@ -193,6 +209,7 @@ def run(args) -> int:
                     max_repos_deep=args.deep_repos,
                     files_per_repo=args.files_per_repo,
                     max_files_total=args.max_files,
+                    call_budget=call_budget,
                 )
             except RateLimitExhausted as exc:
                 print(f"RATE LIMITED — stopping cleanly.\n  {exc}")
@@ -379,6 +396,10 @@ def main() -> int:
     parser.add_argument("--deep-repos", type=int, default=8)
     parser.add_argument("--files-per-repo", type=int, default=6)
     parser.add_argument("--max-files", type=int, default=45)
+    parser.add_argument("--budget-per-candidate", type=int, default=0,
+                        help="cap GitHub calls per candidate so a cohort run fits a "
+                             "fresh rate-limit budget. 0 (default) derives it from the "
+                             "remaining quota and the number of candidates selected.")
     parser.add_argument("--offline", action="store_true", help="cache only, no network")
     parser.add_argument("--resume-from", help="existing scores.csv to skip already-done CVs")
     parser.add_argument("--verbose", action="store_true")

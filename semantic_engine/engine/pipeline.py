@@ -26,7 +26,9 @@ from pathlib import Path
 
 from .github.client import GitHubClient, GitHubError
 from .github.miner import mine_profile
+from .matching.binding import bind_projects
 from .matching.semantic import match_skills
+from . import ontology
 from .models import GithubProfile, ReadinessReport
 from .resume.parser import parse_resume
 from .scoring.engine import score_candidate
@@ -67,6 +69,26 @@ def score_resume(
     report = score_candidate(
         name, resume, github, verdicts, boolean_mode=boolean_mode
     )
+
+    # Project-level binding runs AFTER scoring on purpose: it consumes the
+    # per-skill verdicts and contributes nothing back to the number. See
+    # engine/matching/binding.py for why a fuzzy match must not move a score.
+    if github is not None and resume.projects:
+        report.project_bindings = bind_projects(
+            resume.projects, github.repos, verdicts,
+            ontology_resolver=ontology.from_cv_parser,
+        )
+        conflicts = [b for b in report.project_bindings if b.has_conflict and not b.tentative]
+        if conflicts:
+            report.warnings.append(
+                "Project-level mismatch — "
+                + "; ".join(
+                    f"{b.project_title} claims {', '.join(b.missing_skills)} but its "
+                    f"linked repository ({b.repo}) shows none"
+                    for b in conflicts[:3]
+                )
+                + ". Not counted in the score; only the sampled files were inspected."
+            )
 
     if resume.status == "failed":
         report.warnings.insert(0, f"Resume parsing failed: {resume.reason}")
