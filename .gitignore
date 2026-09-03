@@ -8,3 +8,5 @@ build/
 coverage/
 __pycache__/
 *.pyc
+CV with GitHub/
+skill_verification/results.json
