@@ -245,11 +245,22 @@ create table if not exists public.code_analysis (
   max_nesting_depth         int,
   included                  boolean not null default true,
   excluded_reason           text check (excluded_reason in (
-                              'fork', 'empty', 'too_large', 'tutorial_clone_heuristic'
+                              'fork', 'empty', 'too_large', 'tutorial_clone_heuristic',
+                              'fetch_failed'
                             )),
   analyzed_at               timestamptz not null default now()
 );
 create index if not exists code_analysis_user_id_idx on public.code_analysis (user_id);
+
+-- Idempotent upgrade path for databases created before 'fetch_failed' existed:
+-- one repo failing to fetch (404/403/5xx from GitHub, corrupt tarball) is
+-- recorded as an excluded repo rather than failing the whole student's run,
+-- so the value must be accepted by already-created tables too.
+alter table public.code_analysis drop constraint if exists code_analysis_excluded_reason_check;
+alter table public.code_analysis add constraint code_analysis_excluded_reason_check
+  check (excluded_reason in (
+    'fork', 'empty', 'too_large', 'tutorial_clone_heuristic', 'fetch_failed'
+  ));
 
 -- ---------------------------------------------------------------------------
 -- code_analysis_summary  — per-student rollup, computed once by the

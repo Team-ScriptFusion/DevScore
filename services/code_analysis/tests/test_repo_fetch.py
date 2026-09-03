@@ -1,6 +1,7 @@
 import io
 import os
 import tarfile
+import tempfile
 from unittest.mock import patch
 
 import pytest
@@ -141,6 +142,28 @@ def test_extract_and_filter_caps_total_files(monkeypatch):
         assert len(files) == 2
     finally:
         cleanup(tmp_dir)
+
+
+def test_extract_and_filter_leaves_no_temp_dir_when_extraction_fails(monkeypatch):
+    # The caller only ever gets a tmp_dir to clean up on the success path, so a
+    # failure between mkdtemp and the return would leak the directory (and any
+    # partially-extracted content) permanently. Record what mkdtemp handed out
+    # and assert it is gone after the failure.
+    created = []
+    real_mkdtemp = tempfile.mkdtemp
+
+    def recording_mkdtemp(*args, **kwargs):
+        path = real_mkdtemp(*args, **kwargs)
+        created.append(path)
+        return path
+
+    monkeypatch.setattr(repo_fetch.tempfile, "mkdtemp", recording_mkdtemp)
+
+    with pytest.raises(tarfile.ReadError):
+        extract_and_filter(b"not a real tarball")
+
+    assert len(created) == 1
+    assert not os.path.exists(created[0])
 
 
 def test_cleanup_removes_directory():

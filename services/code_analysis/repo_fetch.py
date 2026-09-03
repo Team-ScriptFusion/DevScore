@@ -85,25 +85,39 @@ def extract_and_filter(tarball_bytes: bytes):
     walks it filtering out SKIP_DIRS and oversized files, capping the
     total file count at MAX_FILES_PER_REPO. Returns
     (tmp_dir, filtered_file_paths). Caller must call cleanup(tmp_dir).
+
+    Ownership of the temp directory transfers to the caller only on the
+    success path. If anything fails after mkdtemp — a corrupt or
+    truncated tarball, a path-traversal member rejected by the 'data'
+    filter (which can leave partially-extracted content behind), or an
+    error while walking — this function deletes the directory itself
+    before re-raising, since the caller never receives a path it could
+    clean up.
     """
     tmp_dir = tempfile.mkdtemp(prefix="code_analysis_")
-    with tarfile.open(fileobj=io.BytesIO(tarball_bytes)) as tar:
-        tar.extractall(tmp_dir, filter="data")
+    try:
+        with tarfile.open(fileobj=io.BytesIO(tarball_bytes)) as tar:
+            tar.extractall(tmp_dir, filter="data")
 
-    filtered = []
-    for root, dirs, files in os.walk(tmp_dir):
-        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
-        for fname in files:
-            if len(filtered) >= MAX_FILES_PER_REPO:
-                return tmp_dir, filtered
-            path = os.path.join(root, fname)
-            try:
-                if os.path.getsize(path) > MAX_FILE_BYTES:
+        filtered = []
+        for root, dirs, files in os.walk(tmp_dir):
+            dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+            for fname in files:
+                if len(filtered) >= MAX_FILES_PER_REPO:
+                    return tmp_dir, filtered
+                path = os.path.join(root, fname)
+                try:
+                    if os.path.getsize(path) > MAX_FILE_BYTES:
+                        continue
+                except OSError:
                     continue
-            except OSError:
-                continue
-            filtered.append(path)
-    return tmp_dir, filtered
+                filtered.append(path)
+        return tmp_dir, filtered
+    except BaseException:
+        # BaseException, not Exception: source code is never left on disk
+        # after a failed analysis, including on KeyboardInterrupt/SystemExit.
+        cleanup(tmp_dir)
+        raise
 
 
 def cleanup(tmp_dir: str) -> None:
