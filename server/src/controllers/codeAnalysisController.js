@@ -114,6 +114,18 @@ export async function runAnalysis(req, res, next) {
       return next(serviceUnavailableError());
     }
 
+    if (
+      repoNames.length > 0 &&
+      result.repos.every((r) => r.excluded_reason === 'fetch_failed')
+    ) {
+      // Every repo failed to fetch/analyze (outage, network loss, or
+      // rate-limiting affecting the whole batch) rather than just one bad
+      // repo. This must not overwrite previously-good stored results with
+      // an all-excluded, null-summary result, nor mark the cache fresh on
+      // that empty result — treat it the same as a service failure.
+      return next(serviceUnavailableError());
+    }
+
     await CodeAnalysis.replaceForUser(studentId, result.repos);
     await CodeAnalysis.upsertSummary(studentId, result.summary);
 
