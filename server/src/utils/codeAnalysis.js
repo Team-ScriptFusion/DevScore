@@ -1,9 +1,14 @@
 import { env } from '../config/env.js';
 
-// Tarball download + extraction + lizard across up to 15 repos is heavier
-// than either cv_parser's single-PDF parse or skill_verification's
-// metadata-only fetch — sized accordingly.
-const REQUEST_TIMEOUT_MS = 90_000;
+// Sized against the Python service's real worst case, not a guess: it
+// processes up to 15 repos strictly sequentially, and each repo's network
+// budget alone is a 15s metadata fetch plus a 30s tarball download
+// (repo_fetch.py's timeout=15 / timeout=30) — 15 x 45s = 675s before any
+// extraction or lizard time is counted. 15 minutes leaves margin for that
+// CPU work plus general overhead. Timing out short is expensive here:
+// nothing is persisted on that path, so analyzed_at stays stale, the 24h
+// cache never goes fresh, and every retry repeats the whole sequence.
+const REQUEST_TIMEOUT_MS = 900_000;
 
 function headers() {
   return {

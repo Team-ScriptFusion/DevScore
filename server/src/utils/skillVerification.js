@@ -20,7 +20,17 @@ export async function fetchGithubEvidence(username, accessToken) {
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (res.status === 401) {
-    throw new Error('invalid_github_token');
+    // The service answers 401 for two unrelated reasons: {"error":"invalid_token"}
+    // when GitHub rejected the student's token, and {"error":"unauthorized"} when
+    // our own X-Api-Key doesn't match theirs. Only the first is a real GitHub
+    // problem; conflating them would let a shared-secret misconfiguration reach
+    // respondNotConnected and overwrite every stored verification with
+    // verified: false. Anything else must fall through to the 502 path.
+    const body = await res.json().catch(() => ({}));
+    if (body.error === 'invalid_token') {
+      throw new Error('invalid_github_token');
+    }
+    throw new Error(`skill_verification fetch-evidence responded 401: ${body.error || 'unauthorized'}`);
   }
   if (!res.ok) {
     throw new Error(`skill_verification fetch-evidence responded ${res.status}`);
