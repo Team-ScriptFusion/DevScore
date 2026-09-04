@@ -8,7 +8,7 @@ User=devscore
 WorkingDirectory=/opt/devscore/semantic_engine
 EnvironmentFile=/opt/devscore/semantic_engine/.env
 Environment=PORT=5002
-ExecStart=/opt/devscore/semantic_engine/venv/bin/gunicorn service.app:app --bind 0.0.0.0:5002 --workers 2 --timeout 90
+ExecStart=/opt/devscore/semantic_engine/venv/bin/gunicorn service.app:app --bind 0.0.0.0:5002 --workers 2 --timeout 120
 Restart=always
 RestartSec=5
 StandardOutput=journal
