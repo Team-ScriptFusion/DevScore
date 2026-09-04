@@ -6,15 +6,30 @@ import { supabase } from '../config/db.js';
  * per resume; re-scoring on re-upload overwrites it.
  */
 
-/** Map a DB row to the shape the client expects, or null if never scored. */
+/**
+ * Map a DB row to the shape the client expects, or null if never scored.
+ * `report` is the full semantic_engine payload (see scoreGithub in
+ * utils/semanticEngine.js) — surfaced beyond just score/band so the client
+ * can render the full breakdown, per-skill GitHub evidence, authorship and
+ * warnings, not just the headline number.
+ */
 export function toPublicReadinessReport(row) {
   if (!row) return null;
+  const report = row.report || null;
   return {
     status: row.status,
     score: row.score,
     band: row.band,
+    error: row.error,
     requestedAt: row.requested_at,
     completedAt: row.completed_at,
+    confidence: report?.confidence ?? null,
+    breakdown: report?.breakdown ?? null,
+    categoryScores: report?.category_scores ?? null,
+    evidenceGap: report?.evidence_gap ?? null,
+    verdicts: report?.verdicts ?? null,
+    authorship: report?.authorship ?? null,
+    warnings: report?.warnings ?? null,
   };
 }
 

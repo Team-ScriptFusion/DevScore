@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 import SkillChips from '../components/SkillChips.jsx';
+import ReadinessScore from '../components/ReadinessScore.jsx';
+import GithubEvidence from '../components/GithubEvidence.jsx';
 import { recruiterApi } from '../lib/api.js';
 import { ResumeIcon, GithubMiningIcon } from '../components/FeatureIcons.jsx';
 import { InlineLoader } from '../components/Spinner.jsx';
@@ -137,28 +139,25 @@ export default function CandidateProfile() {
             </div>
           )}
 
-          <div className="card" style={{ marginTop: 20 }}>
-            <h3 style={{ marginTop: 0 }}>Job Readiness Score</h3>
-            {candidate.readinessStatus === 'success' ? (
-              <p style={{ marginBottom: 0 }}>
-                <strong style={{ fontSize: '1.5em' }}>{candidate.readinessScore}</strong>
-                <span className="muted"> / 100 &mdash; {candidate.readinessBand}</span>
-              </p>
-            ) : candidate.readinessStatus === 'pending' ? (
-              <p className="muted" style={{ marginBottom: 0 }}>
-                Verifying claimed skills against GitHub evidence&hellip;
-              </p>
-            ) : candidate.readinessStatus === 'failed' ? (
-              <p className="muted" style={{ marginBottom: 0 }}>
-                Scoring failed for this candidate&rsquo;s GitHub evidence.
-              </p>
-            ) : (
-              <p className="muted" style={{ marginBottom: 0 }}>
-                {candidate.githubVerified
+          <div style={{ marginTop: 20 }}>
+            <ReadinessScore
+              readiness={candidate.readiness}
+              emptyHint={
+                candidate.githubVerified
                   ? "Not scored yet — this candidate hasn't uploaded a resume with recognised skills."
-                  : "Not scored yet — this candidate hasn't connected GitHub."}
-              </p>
-            )}
+                  : "Not scored yet — this candidate hasn't connected GitHub."
+              }
+            />
+          </div>
+          <div style={{ marginTop: 20 }}>
+            <GithubEvidence
+              readiness={candidate.readiness}
+              emptyHint={
+                candidate.githubVerified
+                  ? 'No GitHub evidence yet.'
+                  : "This candidate hasn't connected GitHub."
+              }
+            />
           </div>
         </>
       )}

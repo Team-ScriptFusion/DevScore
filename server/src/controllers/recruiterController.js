@@ -152,6 +152,9 @@ export async function getCandidate(req, res, next) {
     res.json({
       candidate: {
         ...buildCandidateSummary(user, connection, resume, skills, readiness),
+        // Full breakdown/evidence/warnings, not just the flat status/score/band
+        // above — the candidate detail view renders the whole readiness panel.
+        readiness: ReadinessReport.toPublicReadinessReport(readiness),
         appliedRoles: applications.map((a) => ({
           jobId: a.job_id,
           jobTitle: titleById.get(a.job_id) || '',

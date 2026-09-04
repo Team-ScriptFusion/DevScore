@@ -1,0 +1,18 @@
+[Unit]
+Description=DevScore semantic_engine microservice
+After=network.target
+
+[Service]
+Type=simple
+User=devscore
+WorkingDirectory=/opt/devscore/semantic_engine
+EnvironmentFile=/opt/devscore/semantic_engine/.env
+Environment=PORT=5002
+ExecStart=/opt/devscore/semantic_engine/venv/bin/gunicorn service.app:app --bind 0.0.0.0:5002 --workers 2 --timeout 90
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
