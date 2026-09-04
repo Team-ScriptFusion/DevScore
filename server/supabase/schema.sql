@@ -180,6 +180,25 @@ create table if not exists public.job_applications (
 create index if not exists job_applications_job_id_idx on public.job_applications (job_id);
 create index if not exists job_applications_student_id_idx on public.job_applications (student_id);
 
+-- ---------------------------------------------------------------------------
+-- readiness_reports  — output of the semantic_engine scoring pipeline
+-- (semantic_engine/service/app.py POST /score-github) for a student's
+-- current resume + linked GitHub account. One row per resume (current state
+-- only, like resumes itself); re-scoring on re-upload overwrites it.
+-- ---------------------------------------------------------------------------
+create table if not exists public.readiness_reports (
+  id           uuid primary key default gen_random_uuid(),
+  resume_id    uuid not null unique references public.resumes (id) on delete cascade,
+  status       text not null default 'pending'
+                 check (status in ('pending', 'success', 'failed')),
+  score        numeric,
+  band         text,
+  report       jsonb,
+  error        text,
+  requested_at timestamptz not null default now(),
+  completed_at timestamptz
+);
+
 -- The API accesses these tables only through the service-role key, so RLS is
 -- enabled with no public policies (deny-by-default for anon/authenticated).
 alter table public.users enable row level security;
@@ -190,3 +209,4 @@ alter table public.skills enable row level security;
 alter table public.resume_skills enable row level security;
 alter table public.job_roles enable row level security;
 alter table public.job_applications enable row level security;
+alter table public.readiness_reports enable row level security;

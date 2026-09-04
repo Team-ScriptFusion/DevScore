@@ -42,10 +42,17 @@ export const env = {
     url: process.env.CV_PARSER_URL || 'http://localhost:5001',
     apiKey: process.env.CV_PARSER_API_KEY || '',
   },
+  engine: {
+    url: process.env.SEMANTIC_ENGINE_URL || 'http://localhost:5002',
+    apiKey: process.env.SEMANTIC_ENGINE_API_KEY || '',
+  },
 };
 
 /** True only when the CV parser service URL is configured. */
 export const isCvParserConfigured = Boolean(env.cvParser.url);
+
+/** True only when the semantic analysis / readiness-scoring service URL is configured. */
+export const isSemanticEngineConfigured = Boolean(env.engine.url);
 
 /** True only when Supabase credentials are present. */
 export const isSupabaseConfigured = Boolean(

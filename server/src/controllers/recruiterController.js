@@ -6,9 +6,10 @@ import {
 } from '../models/JobApplication.js';
 import * as GithubConnection from '../models/GithubConnection.js';
 import * as Resume from '../models/Resume.js';
+import * as ReadinessReport from '../models/ReadinessReport.js';
 
 /** Assemble the evidence summary a recruiter is allowed to see for one candidate. */
-function buildCandidateSummary(user, connection, resume, skills) {
+function buildCandidateSummary(user, connection, resume, skills, readiness) {
   const u = toPublicUser(user);
   return {
     id: u.id,
@@ -25,6 +26,9 @@ function buildCandidateSummary(user, connection, resume, skills) {
     skillsStatus: resume?.extraction_status || null,
     claimedSkills: skills?.byCategory || null,
     skillsUncategorized: skills?.uncategorized || null,
+    readinessStatus: readiness?.status || null,
+    readinessScore: readiness?.score ?? null,
+    readinessBand: readiness?.band || null,
   };
 }
 
@@ -67,6 +71,7 @@ export async function listCandidates(req, res, next) {
     const connectionByUser = Object.fromEntries(connections.map((c) => [c.user_id, c]));
     const resumeByUser = Object.fromEntries(resumes.map((r) => [r.user_id, r]));
     const skillsByResume = await Resume.getSkillsForResumes(resumes.map((r) => r.id));
+    const readinessByResume = await ReadinessReport.findByResumeIds(resumes.map((r) => r.id));
 
     const studentById = new Map(rows.map((r) => [r.id, r]));
     const titleById = new Map(jobs.map((j) => [j.id, j.title]));
@@ -82,6 +87,7 @@ export async function listCandidates(req, res, next) {
             connectionByUser[student.id],
             resume,
             resume ? skillsByResume[resume.id] : null,
+            resume ? readinessByResume[resume.id] : null,
           ),
           applicationId: a.id,
           jobId: a.job_id,
@@ -140,11 +146,12 @@ export async function getCandidate(req, res, next) {
       Resume.findByUserId(user.id),
     ]);
     const skills = resume ? await Resume.getSkills(resume.id) : null;
+    const readiness = resume ? await ReadinessReport.findByResumeId(resume.id) : null;
 
     const titleById = new Map(jobs.map((j) => [j.id, j.title]));
     res.json({
       candidate: {
-        ...buildCandidateSummary(user, connection, resume, skills),
+        ...buildCandidateSummary(user, connection, resume, skills, readiness),
         appliedRoles: applications.map((a) => ({
           jobId: a.job_id,
           jobTitle: titleById.get(a.job_id) || '',
