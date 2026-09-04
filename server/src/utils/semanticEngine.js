@@ -3,8 +3,10 @@ import { env } from '../config/env.js';
 // Scoring mines up to ~100 GitHub calls per candidate (semantic_engine's own
 // docs), so this runs well past cvParser's 45s budget — but it's always
 // called from a detached background task (never inline in a request), so a
-// longer wait here costs nothing user-facing.
-const REQUEST_TIMEOUT_MS = 60_000;
+// longer wait here costs nothing user-facing. Matches the engine service's
+// own gunicorn --timeout (see semantic_engine deploy notes) so Node doesn't
+// give up before the engine would have legitimately finished.
+const REQUEST_TIMEOUT_MS = 90_000;
 
 /**
  * Calls the semantic_engine microservice's POST /score-github — scores an
