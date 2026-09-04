@@ -9,11 +9,15 @@ claims React, spend the budget on `.jsx`/`.tsx` files in repos that declare
 
 Sampling policy, in order:
 
-  REPO FILTER   Forks are excluded from evidence entirely — a fork proves a
-                button click, not authorship. (They are still counted and
-                reported, because a recruiter seeing "3 repos" should know
-                there were 14 forks.) Repos with zero language bytes
-                (empty, or docs-only) are skipped.
+  REPO FILTER   Forks are not mined as though the candidate wrote them — a
+                fork is one click, and its whole history belongs to the
+                original author. But they are no longer discarded either:
+                a fork the candidate actually committed to is mined in
+                CONTRIBUTION MODE, where only the lines they personally added
+                are read (see contributions.py). A fork they never touched
+                still contributes nothing and costs one call to establish.
+                Repos with zero language bytes (empty, or docs-only) are
+                skipped.
 
   REPO RANK     Repos are scored for relevance to the claimed skill set and
                 for signs of being real work — size, commit count by the
@@ -42,6 +46,7 @@ from datetime import datetime, timezone
 
 from .. import ontology
 from ..models import CommitAuthorship, GithubProfile, RepoEvidence, SourceFile
+from .contributions import mine_contribution
 from .client import GitHubClient, GitHubError, RateLimitExhausted
 
 # ---------------------------------------------------------------------------
@@ -426,7 +431,9 @@ def mine_profile(
     max_repos_deep: int = 12,
     files_per_repo: int = 10,
     max_files_total: int = 70,
-    include_forks: bool = False,
+    include_forks: bool = True,
+    max_forks: int = 6,
+    fork_commits: int = 8,
     call_budget: int | None = None,
 ) -> GithubProfile:
     client = client or GitHubClient()
@@ -474,12 +481,11 @@ def mine_profile(
         return profile
 
     shallow: list[RepoEvidence] = []
+    forks: list[RepoEvidence] = []
     for raw in raw_repos:
-        if raw.get("fork") and not include_forks:
-            continue
         if raw.get("archived") and (raw.get("size") or 0) == 0:
             continue
-        shallow.append(RepoEvidence(
+        entry = RepoEvidence(
             name=raw.get("name") or "",
             full_name=raw.get("full_name") or "",
             description=(raw.get("description") or "")[:400],
@@ -490,7 +496,17 @@ def mine_profile(
             pushed_at=raw.get("pushed_at") or "",
             default_branch=raw.get("default_branch") or "main",
             topics=list(raw.get("topics") or []),
-        ))
+        )
+        if entry.is_fork:
+            # Held back from the owned-repo pipeline entirely. A fork never
+            # contributes language share, dependency manifests or whole files,
+            # because none of that is the candidate's work.
+            entry.evidence_mode = "contributions"
+            forks.append(entry)
+        else:
+            shallow.append(entry)
+
+    profile.forks_seen = len(forks)
 
     # Language stats cost ONE CALL PER REPOSITORY, and a student with 40 repos
     # therefore spent 40 calls before any evidence was read — the single largest
@@ -599,6 +615,49 @@ def mine_profile(
         repo.authorship = classify_authorship(commits, username, profile.name)
         repo.commits_by_owner = repo.authorship.mine
         repo.last_owner_commit = repo.authorship.last_mine
+
+    # ---- forks: contribution mode ---------------------------------------
+    #
+    # Ranked by recency and size so the fork most likely to hold real work is
+    # examined first. Each costs one call to find out whether the candidate
+    # ever committed; only those that did cost anything more.
+    if include_forks and forks:
+        for repo in prerank_repos(forks, claimed_skills)[:max_forks]:
+            if budget_spent():
+                break
+            try:
+                contribution = mine_contribution(
+                    client, repo.full_name, username,
+                    classify_language=classify,
+                    max_commits=fork_commits,
+                )
+            except RateLimitExhausted:
+                profile.error = "rate limit reached during fork contribution mining"
+                break
+            except GitHubError:
+                continue
+
+            repo.commits_by_owner = contribution.commits_by_candidate
+            repo.last_owner_commit = contribution.last_commit
+            repo.authorship = CommitAuthorship(
+                mine=contribution.commits_by_candidate,
+                last_mine=contribution.last_commit,
+            )
+            if not contribution.files:
+                continue          # forked and never meaningfully touched
+
+            repo.contributed_lines = contribution.total_added_lines
+            for contributed in contribution.files:
+                repo.fetched_files.append(SourceFile(
+                    repo=repo.name,
+                    path=contributed.path,
+                    language=contributed.language,
+                    size_bytes=len(contributed.text.encode("utf-8")),
+                    text=contributed.text,
+                    is_fragment=True,
+                ))
+            profile.forks_contributed_to += 1
+            ranked.append(repo)
 
     profile.repos = ranked
     profile.repos_deep_mined = repos_deep_mined

@@ -133,6 +133,11 @@ def _verdict_row(v: dict) -> str:
         if metric_rows else ""
     )
 
+    contributed = (
+        '<span class="tier" title="Only lines this candidate added to a '
+        'repository someone else owns">contributed only</span>'
+        if v.get("contribution_only") else ""
+    )
     return f"""
     <details class="verdict {cls}">
       <summary>
@@ -140,6 +145,7 @@ def _verdict_row(v: dict) -> str:
         <span class="skillname">{html.escape(v["skill"])}</span>
         <span class="nums">W {v["weight"]:.2f} &middot; V {v["verification"]:.2f}</span>
         <span class="tier">{html.escape(v["tier"])}</span>
+        {contributed}
       </summary>
       <div class="body">
         <p class="explain">{html.escape(v["explanation"])}</p>

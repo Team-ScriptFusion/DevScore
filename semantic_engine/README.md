@@ -15,7 +15,7 @@ Job Readiness Score.
 ```bash
 cd semantic_engine
 pip install -r requirements.txt
-python tests/test_engine.py        # 74 tests
+python tests/test_engine.py        # 84 tests
 ```
 
 Every command below is run from `semantic_engine/`. Put the collected CVs in
@@ -139,7 +139,7 @@ Run the tests:
 python tests/test_engine.py          # or: python -m pytest tests -q
 ```
 
-74 tests, every one anchored to a failure mode that would produce a *plausible
+84 tests, every one anchored to a failure mode that would produce a *plausible
 but wrong score* rather than a crash — a crash gets noticed, a candidate quietly
 scored 12 points low does not.
 
@@ -312,6 +312,72 @@ like a stranger in their own repository.
 Ownership is **reported, not scored** — a student on a four-person team
 legitimately owns a minority of their own repository's log, and deflating them
 for collaborating would punish the behaviour the degree asks for.
+
+### Forks: only the lines they wrote
+
+Forking is one click, and a fork sits in the candidate's account looking exactly
+like their own work while its entire history belongs to the original author.
+Counting it would credit a button press as engineering.
+
+But discarding forks wholesale is wrong in the other direction: someone who
+forks a project and lands 40 commits of real feature work has genuinely written
+that code, and ignoring it means their strongest evidence is invisible while a
+classmate who pushed a tutorial to a fresh repository scores higher.
+
+So forks are mined — for **only the lines the candidate personally added**:
+
+1. `GET /repos/{full}/commits?author={username}` — one call. Server-side
+   filtering is right *here*, unlike in authorship classification: the question
+   is "what did they write", so commits GitHub cannot attribute to them are
+   exactly the ones that must not count.
+2. Nothing back? The fork is a button click. Stop; one call spent.
+3. Otherwise pull their commit diffs and keep the **added lines only**
+   (`+` lines; `+++` is a file header, and removing someone else's code is not
+   writing your own).
+
+What comes back is a **fragment** — their lines, per file — and a fragment is
+deliberately a weaker class of evidence than an owned repository:
+
+| Signal | Fragment | Why |
+|---|---|---|
+| marker / import | **yes** | A regex hit on `useState(` in a line they wrote proves they wrote it. The strongest possible proof of the skill. |
+| depth (volume) | **yes** | Counted from contributed lines only. |
+| recency | **yes** | From their own commit dates. |
+| **complexity** | **no** | An added-lines fragment is not a parseable program — braces open without closing, and the structure it plugs into is someone else's. Scoring it would credit them with the original author's architecture. |
+| **craft** (tests/CI) | **no** | The test suite and CI belong to the upstream project. |
+
+A useful guarantee falls out of that for free: **mastery requires a complexity
+floor, and fragments carry no complexity, so fork contributions alone can never
+reach `mastered`.** They can prove a candidate *writes* React; only their own
+repositories can show they can *structure* it. Any skill resting entirely on
+contributed code is labelled **"contributed only"** in the report.
+
+Real effect on the collected cohort: **101 forks seen, 13 of them holding the
+candidate's own commits, 13,547 lines attributed** — and 19 skill verdicts that
+now rest entirely on contributed code and would otherwise have been invisible.
+The other 88 forks were button clicks and contributed exactly nothing.
+
+The clearest single case is a candidate whose own repositories are frontend-only
+but who had landed 3,009 lines across two team projects he had forked:
+
+```
+                    calls   score   forks used
+  forks off           17     21.3
+  forks on            34     32.6   2 of 5
+```
+
+His React, TypeScript, Express, PostgreSQL, REST API and JWT evidence all comes
+from that contributed code — every one of them labelled *contributed only*, and
+none able to reach `mastered`.
+
+Cost is bounded and mostly paid on candidates it helps: one call per fork to
+find out whether they ever committed, and commit diffs only for the forks where
+they did. A candidate with five untouched forks pays five calls and gains
+nothing, which is the correct price for establishing that.
+
+**Still invisible:** commits to someone else's repository that the candidate
+never forked. The miner lists repositories the account *owns* (`type=owner`), so
+a pure collaborator's work in another person's project is out of reach.
 
 ### Per-candidate API budget
 
@@ -645,6 +711,7 @@ engine/
   models.py              dataclasses; ReadinessReport is self-explaining
   github/client.py       REST client: disk+ETag cache, rate-limit budget guard
   github/miner.py        targeted sampling — repo ranking, file picking, manifests
+  github/contributions.py  fork mining: only the lines the candidate added
   analysis/textprep.py   comment/string stripping  ← load-bearing
   analysis/python_ast.py exact McCabe complexity via the ast module
   analysis/brace.py      token-level analyser for every other language
@@ -661,7 +728,7 @@ batch.py                 cohort runner → scores.csv, verdicts.csv, summary.md
 tools/ablation.py        boolean vs continuous vs expert baseline
 tools/calibrate_weights.py   re-derive scarcity from job-description data
 supabase/schema.sql      persistence tables for Implementation 01's database
-tests/test_engine.py     74 tests, all on silent-failure paths
+tests/test_engine.py     84 tests, all on silent-failure paths
 ```
 
 ---
@@ -724,8 +791,9 @@ Without a token you get 60 requests/hour — about half of one candidate.
 - **Sampling, not exhaustive analysis.** Up to ~10 files per repo across the
   top-ranked repositories. Rate limits make full analysis impossible, and past a
   point more code does not improve the verdict.
-- **Forks are excluded.** A fork proves a button click, not authorship. Counted
-  and reported, never used as evidence.
+- **Forks contribute only what the candidate wrote.** A fork's inherited history
+  proves a button click; their own added lines do not. See *Forks: only the
+  lines they wrote*.
 - **SQL and utility-CSS need raw text.** Their idioms legitimately live inside
   string literals, so `search_raw` waives comment/string stripping for those
   specific skills. This is the one deliberate hole in rule 1 above, granted one

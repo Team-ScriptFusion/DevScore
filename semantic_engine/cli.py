@@ -96,6 +96,9 @@ def print_report(report) -> None:
               f"{DIM}[{v['tier']}] E{sig['evidence_strength']:.2f} "
               f"C{sig['complexity']:.2f} D{sig['depth']:.2f} "
               f"R{sig['recency']:.2f} Q{sig['craft']:.2f}{RESET}")
+        if v.get("contribution_only"):
+            print(f"      {CYAN}↳ contributed code only — no owned repository "
+                  f"backs this{RESET}")
         if v["repos"]:
             print(f"      {DIM}↳ {', '.join(v['repos'][:4])}"
                   f"{' …' if len(v['repos']) > 4 else ''} · "
@@ -119,6 +122,16 @@ def print_report(report) -> None:
             if b["has_conflict"]:
                 print(f"      {RED}claims {', '.join(b['missing_skills'])}{RESET}"
                       f"{DIM} — no sign of it in that repository{RESET}")
+
+    forks = d.get("forks") or {}
+    if forks.get("seen"):
+        detail = (f" — {', '.join(forks['repos'][:4])}"
+                  f" ({forks['contributed_lines']:,} lines they added)"
+                  if forks.get("repos") else "")
+        print(f"\n  {BOLD}Forks{RESET}  {forks['seen']} forked repositor"
+              f"{'y' if forks['seen'] == 1 else 'ies'}, "
+              f"{forks.get('contributed_to', 0)} with code they wrote themselves"
+              f"{DIM}{detail}{RESET}")
 
     if d.get("github_username"):
         auth = d.get("authorship") or {}

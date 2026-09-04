@@ -52,7 +52,30 @@ _EXACT_ANALYSERS = {"python_ast"}
 HEURISTIC_CONFIDENCE = 0.92
 
 
+# A contribution fragment - the lines one candidate added to someone else's
+# file - is measured for volume only. See the note in analyze_file.
+FRAGMENT_ANALYSER = "contribution_fragment"
+
+
 def analyze_file(file: SourceFile) -> CodeMetrics:
+    if file.is_fragment:
+        # Deliberately NOT parsed. An added-lines fragment is not a valid
+        # program: braces open without closing, functions are half-present, and
+        # whatever structure the lines plug into belongs to the original author.
+        # Running the AST or the brace walker over it would produce a
+        # complexity number that credits this candidate with someone else's
+        # architecture, which is the exact inflation fork-exclusion existed to
+        # prevent. Only volume is recorded; markers and imports still match on
+        # the text itself, which is where a fragment's real evidential value is.
+        lines = [l for l in file.text.splitlines() if l.strip()]
+        return CodeMetrics(
+            path=file.path,
+            language=file.language,
+            analyzed_with=FRAGMENT_ANALYSER,
+            loc=len(lines),
+            raw_lines=len(lines),
+            longest_line=max((len(l) for l in lines), default=0),
+        )
     if file.language == "Python":
         return python_ast.analyze(file.path, file.text)
     return brace.analyze(file.path, file.text, file.language or "JavaScript")
@@ -118,7 +141,12 @@ def complexity_score(metrics_list: list[CodeMetrics]) -> float:
     weight is sqrt(loc) rather than loc: without the damping a single huge
     file would decide the score for the whole skill.
     """
-    usable = [m for m in metrics_list if m.loc >= 15 and m.analyzed_with != "failed"]
+    # Fragments are excluded outright: they carry no measurable structure, and
+    # including them at zero would drag a real repository's complexity down.
+    usable = [
+        m for m in metrics_list
+        if m.loc >= 15 and m.analyzed_with not in ("failed", FRAGMENT_ANALYSER)
+    ]
     if not usable:
         return 0.0
 
@@ -145,7 +173,10 @@ def craft_score(metrics_list: list[CodeMetrics], repos: list[RepoEvidence]) -> f
     has_ci = any(r.has_ci for r in repos)
     has_readme = any(r.has_readme for r in repos)
 
-    files = [m for m in metrics_list if m.loc >= 15]
+    # Craft is a property of the repository, not of a pasted-in fragment: the
+    # tests and CI in a fork belong to the upstream project.
+    files = [m for m in metrics_list
+             if m.loc >= 15 and m.analyzed_with != FRAGMENT_ANALYSER]
     if files:
         error_handling = sum(1 for m in files if m.has_error_handling) / len(files)
         documented = sum(1 for m in files if m.has_docstrings or m.comment_ratio >= 0.05) / len(files)

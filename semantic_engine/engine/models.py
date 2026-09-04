@@ -80,6 +80,12 @@ class SourceFile:
     language: str                  # our own classification, from extension
     size_bytes: int
     text: str = ""                 # populated only for files we actually fetch
+    # True when `text` holds only the lines THIS candidate added (a fork or
+    # other repository they did not author outright), not the whole file.
+    # A fragment is valid evidence for markers and imports - a regex hit on a
+    # line they wrote proves they wrote it - but it is not parseable code, so
+    # dispatch.py refuses to derive complexity from it.
+    is_fragment: bool = False
 
     @property
     def ext(self) -> str:
@@ -158,6 +164,11 @@ class RepoEvidence:
     has_docker: bool = False
     has_lockfile: bool = False
     tree_truncated: bool = False
+    # "full"          the candidate owns this repository; whole files are read
+    # "contributions" a fork or inherited repository; only the lines they
+    #                 personally added are read, and complexity is not derived
+    evidence_mode: str = "full"
+    contributed_lines: int = 0
 
     @property
     def total_language_bytes(self) -> int:
@@ -171,7 +182,8 @@ class RepoEvidence:
         d["dependencies"] = sorted(self.dependencies)
         # Source text is large and privacy-sensitive; never serialise it.
         d["fetched_files"] = [
-            {"repo": f.repo, "path": f.path, "language": f.language, "size_bytes": f.size_bytes}
+            {"repo": f.repo, "path": f.path, "language": f.language,
+             "size_bytes": f.size_bytes, "is_fragment": f.is_fragment}
             for f in self.fetched_files
         ]
         return d
@@ -193,6 +205,11 @@ class GithubProfile:
     # looking like a candidate with nothing to show.
     calls_spent: int = 0
     repos_deep_mined: int = 0
+    # Forks are reported, not hidden: a recruiter seeing "3 repositories"
+    # should know whether there were also 14 forks, and which of them the
+    # candidate actually wrote code in.
+    forks_seen: int = 0
+    forks_contributed_to: int = 0
     rate_limit_remaining: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -207,6 +224,8 @@ class GithubProfile:
             "api_calls": self.api_calls,
             "calls_spent": self.calls_spent,
             "repos_deep_mined": self.repos_deep_mined,
+            "forks_seen": self.forks_seen,
+            "forks_contributed_to": self.forks_contributed_to,
             "rate_limit_remaining": self.rate_limit_remaining,
             "repos": [r.to_dict() for r in self.repos],
         }
@@ -345,6 +364,11 @@ class SkillVerdict:
     # the signals that can actually apply instead of scoring them as if they
     # were shallow code.
     content_based: bool = True
+    # True when EVERY file backing this skill is a contribution fragment -
+    # lines the candidate added to a repository someone else authored. Real
+    # evidence that they write the technology, but it can carry no complexity,
+    # so the report says so rather than letting it read like owned work.
+    contribution_only: bool = False
 
     @property
     def status(self) -> str:
@@ -384,6 +408,7 @@ class SkillVerdict:
             "metrics": [m.to_dict() for m in self.metrics[:10]],
             "explanation": self.explanation,
             "unclaimed_evidence": self.unclaimed_evidence,
+            "contribution_only": self.contribution_only,
         }
 
 
@@ -459,6 +484,29 @@ class ReadinessReport:
             "disputed_identities": sorted(set(names))[:5],
         }
 
+    def fork_summary(self) -> dict[str, Any]:
+        """
+        Forked repositories, and how many held code this candidate wrote.
+
+        A top-level field rather than something buried in `github`, which is
+        only serialised under include_raw. An earlier version left it there and
+        every report said "0 forks" while contribution evidence was visibly
+        being scored from them — the number existed and nothing could read it.
+        """
+        github = self.github
+        contributed_repos = sorted({
+            repo.name for repo in (github.repos if github else [])
+            if repo.evidence_mode == "contributions" and repo.fetched_files
+        })
+        return {
+            "seen": github.forks_seen if github else 0,
+            "contributed_to": github.forks_contributed_to if github else 0,
+            "repos": contributed_repos,
+            "contributed_lines": sum(
+                repo.contributed_lines for repo in (github.repos if github else [])
+            ),
+        }
+
     def gap_view(self) -> dict[str, list[str]]:
         """The Evidence Gap visualisation, reduced to three buckets."""
         out: dict[str, list[str]] = {"verified": [], "weakly_verified": [], "unverified": []}
@@ -495,6 +543,7 @@ class ReadinessReport:
             "verdicts": [v.to_dict() for v in self.verdicts],
             "project_bindings": [b.to_dict() for b in self.project_bindings],
             "authorship": self.authorship_summary(),
+            "forks": self.fork_summary(),
             "warnings": self.warnings,
         }
         if include_raw:

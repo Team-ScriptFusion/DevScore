@@ -343,7 +343,16 @@ def _explain(verdict: SkillVerdict, repo_count: int) -> str:
             + "."
         )
 
-    if verdict.content_based:
+    if verdict.contribution_only:
+        # Real evidence they write the technology, but it is code added to
+        # someone else's repository, so no complexity was derived from it and
+        # the sentence must not imply otherwise.
+        parts.append(
+            "All of it is code they added to a repository someone else owns, so it "
+            "shows they write this technology but says nothing about how they "
+            "structure a project of their own."
+        )
+    elif verdict.content_based:
         if verdict.complexity >= 0.75:
             parts.append("Code shows substantial branching and structure.")
         elif verdict.complexity >= 0.4:
@@ -434,6 +443,9 @@ def match_skills(
         # source files (Git, Docker, CI/CD, Kubernetes, Nginx) have no code to
         # measure, so complexity and depth are structurally zero for them.
         verdict.content_based = bool(skill.markers or skill.imports)
+        verdict.contribution_only = bool(metrics) and all(
+            m.analyzed_with == "contribution_fragment" for m in metrics
+        )
         verdict.code_repos = sorted(code_repos)
         # Mastery counts repositories with real code, not repositories that
         # merely contain the language.

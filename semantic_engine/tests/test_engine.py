@@ -19,17 +19,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from engine import ontology
 from engine.analysis import brace, python_ast
-from engine.analysis.dispatch import complexity_score, craft_score, depth_score, recency_score
+from engine.analysis.dispatch import (
+    FRAGMENT_ANALYSER, analyze_file, complexity_score, craft_score, depth_score,
+    recency_score,
+)
 from engine.analysis.textprep import strip_noise
 from engine.github.miner import (
     EXCLUDE_PATTERNS, classify, classify_authorship, parse_manifest, prerank_repos,
+)
+from engine.github.contributions import (
+    MIN_ADDED_LINES, added_lines_from_patch, mine_contribution,
 )
 from engine.matching.binding import bind_projects
 from engine.matching.semantic import _promote
 from engine.resume.projects import CVProject, extract_projects
 from engine.models import (
     TIER_AMBIENT, TIER_APPLIED, TIER_DECLARED, TIER_MASTERED, TIER_NONE, TIER_USED,
-    CodeMetrics, EvidenceHit, RepoEvidence, SkillVerdict,
+    CodeMetrics, EvidenceHit, RepoEvidence, SkillVerdict, SourceFile,
 )
 from engine.resume.identity import extract_github, extract_person_name
 from engine.resume.parser import team_cv_parser
@@ -786,6 +792,195 @@ def test_ownership_ratio_and_last_mine_ignore_collaborators():
 def test_empty_commit_log_is_not_an_error():
     result = classify_authorship([], "candidate", "S")
     assert result.total == 0 and result.ownership_ratio == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Fork contributions — only what the candidate personally wrote
+# ---------------------------------------------------------------------------
+
+def test_added_lines_are_extracted_and_headers_ignored():
+    """
+    '+++' is the diff's file header, not an added line, and '@@' is a hunk
+    marker. Counting either would inflate every contribution.
+    """
+    patch = ("@@ -1,3 +1,6 @@\n"
+             " context line\n"
+             "-const removed = 1;\n"
+             "+const added = 2;\n"
+             "+useState(0);\n"
+             "+++ b/ignored.js")
+    added = added_lines_from_patch(patch)
+    assert added == ["const added = 2;", "useState(0);"], added
+
+
+class _FakeClient:
+    """Minimal stand-in for GitHubClient over the two calls this path uses."""
+
+    def __init__(self, commits, details=None):
+        self._commits = commits
+        self._details = details or {}
+        self.author_calls = 0
+        self.detail_calls = 0
+
+    def commits_by_author(self, full_name, author, max_pages=1):
+        self.author_calls += 1
+        return self._commits
+
+    def commit_detail(self, full_name, sha):
+        self.detail_calls += 1
+        return self._details.get(sha)
+
+
+def _commit_stub(sha, date="2026-01-01T00:00:00Z"):
+    return {"sha": sha, "commit": {"author": {"date": date}}}
+
+
+def _detail(files):
+    return {"files": files}
+
+
+def test_untouched_fork_costs_one_call_and_yields_nothing():
+    """
+    The common case: forked, never committed to. It must cost exactly one call
+    to establish that and contribute no evidence whatsoever.
+    """
+    client = _FakeClient(commits=[])
+    result = mine_contribution(client, "someone/upstream", "candidate",
+                               classify_language=lambda p: "JavaScript")
+    assert result.files == []
+    assert result.commits_by_candidate == 0
+    assert client.author_calls == 1
+    assert client.detail_calls == 0, "no diffs should be fetched for an untouched fork"
+
+
+def test_contribution_collects_only_the_candidates_added_lines():
+    body = "\n".join("+line %d" % i for i in range(20))
+    client = _FakeClient(
+        commits=[_commit_stub("abc")],
+        details={"abc": _detail([
+            {"filename": "src/App.jsx", "patch": "@@ -0,0 +1,20 @@\n" + body},
+        ])},
+    )
+    result = mine_contribution(client, "someone/upstream", "candidate",
+                               classify_language=lambda p: "JavaScript")
+    assert len(result.files) == 1
+    assert result.files[0].path == "src/App.jsx"
+    assert result.files[0].added_lines == 20
+    assert result.total_added_lines == 20
+
+
+def test_trivial_contributions_are_not_evidence():
+    """A version bump or a typo fix is not proof that someone writes React."""
+    body = "\n".join("+x = %d" % i for i in range(MIN_ADDED_LINES - 1))
+    client = _FakeClient(
+        commits=[_commit_stub("abc")],
+        details={"abc": _detail([{"filename": "a.js", "patch": body}])},
+    )
+    result = mine_contribution(client, "u/r", "candidate",
+                               classify_language=lambda p: "JavaScript")
+    assert result.files == []
+
+
+def test_vendored_paths_are_excluded_from_contributions():
+    body = "\n".join("+line %d" % i for i in range(30))
+    client = _FakeClient(
+        commits=[_commit_stub("abc")],
+        details={"abc": _detail([
+            {"filename": "node_modules/react/index.js", "patch": body},
+            {"filename": "package-lock.json", "patch": body},
+            {"filename": "src/real.js", "patch": body},
+        ])},
+    )
+    result = mine_contribution(client, "u/r", "candidate",
+                               classify_language=lambda p: "JavaScript")
+    assert [f.path for f in result.files] == ["src/real.js"]
+
+
+def test_binary_diffs_without_a_patch_contribute_nothing():
+    """GitHub omits `patch` for binary and very large diffs."""
+    client = _FakeClient(
+        commits=[_commit_stub("abc")],
+        details={"abc": _detail([{"filename": "logo.png"}, {"filename": "a.js"}])},
+    )
+    result = mine_contribution(client, "u/r", "candidate",
+                               classify_language=lambda p: "JavaScript")
+    assert result.files == []
+
+
+# --- how a fragment may and may not be analysed ----------------------------
+
+def test_fragment_is_measured_for_volume_but_never_parsed():
+    """
+    An added-lines fragment is not a valid program - braces open without
+    closing and the structure it plugs into is someone else's. Deriving
+    complexity from it would credit this candidate with the original author's
+    architecture, which is the exact inflation excluding forks prevented.
+    """
+    fragment = SourceFile(repo="r", path="a.js", language="JavaScript",
+                          size_bytes=100, is_fragment=True,
+                          text="if (a) {\n  doThing();")
+    metrics = analyze_file(fragment)
+    assert metrics.analyzed_with == FRAGMENT_ANALYSER
+    assert metrics.loc == 2
+    assert metrics.cyclomatic == 0 and metrics.functions == 0
+
+
+def test_fragments_are_excluded_from_complexity_and_craft():
+    real = CodeMetrics(path="a.py", analyzed_with="python_ast", loc=200,
+                       functions=10, cyclomatic=50, has_error_handling=True)
+    fragment = CodeMetrics(path="b.js", analyzed_with=FRAGMENT_ANALYSER, loc=400)
+
+    assert complexity_score([real, fragment]) == complexity_score([real])
+    assert complexity_score([fragment]) == 0.0
+
+    repos = [RepoEvidence(name="r", full_name="u/r", has_tests=True)]
+    assert craft_score([real, fragment], repos) == craft_score([real], repos)
+
+
+def test_fork_only_evidence_can_never_reach_mastered():
+    """
+    The guard that keeps a fork honest. Mastery requires a complexity floor,
+    fragments yield no complexity, so contributing to someone else's project
+    can prove a candidate WRITES React but never that they can STRUCTURE it -
+    only their own repositories can show that.
+    """
+    react = ontology.SKILLS["React"]
+    strong = _hits(**{
+        "import": [("App.jsx: from 'react'", 1)],
+        "marker": [("useState", 9), ("useEffect", 7), ("JSX", 12)],
+    })
+    fragment_complexity = complexity_score(
+        [CodeMetrics(path="a.jsx", analyzed_with=FRAGMENT_ANALYSER, loc=500)]
+    )
+    assert fragment_complexity == 0.0
+    assert _promote(react, strong, 3, fragment_complexity) == TIER_APPLIED
+
+
+def test_fork_counts_reach_the_report_without_include_raw():
+    """
+    Regression: the fork counters lived on GithubProfile, which to_dict() only
+    serialises under include_raw. Every report therefore said "0 forks" while
+    contribution evidence from those very forks was visibly being scored - the
+    number existed and nothing downstream could read it.
+    """
+    from engine.models import GithubProfile, ReadinessReport, ResumeProfile
+
+    repo = RepoEvidence(name="upstream", full_name="other/upstream",
+                        is_fork=True, evidence_mode="contributions",
+                        contributed_lines=120)
+    repo.fetched_files = [SourceFile(repo="upstream", path="a.js",
+                                     language="JavaScript", size_bytes=10,
+                                     text="x", is_fragment=True)]
+    github = GithubProfile(username="candidate", repos=[repo],
+                           forks_seen=5, forks_contributed_to=1)
+    report = ReadinessReport(candidate="Someone", github_username="candidate",
+                             github=github, resume=ResumeProfile("cv.pdf", "success"))
+
+    payload = report.to_dict()               # NOT include_raw
+    assert payload["forks"]["seen"] == 5
+    assert payload["forks"]["contributed_to"] == 1
+    assert payload["forks"]["repos"] == ["upstream"]
+    assert payload["forks"]["contributed_lines"] == 120
 
 
 # ---------------------------------------------------------------------------

@@ -57,6 +57,7 @@ def load_cohort(reports_dir: str | Path) -> list[dict[str, Any]]:
                 "w": v["weight"],
                 "st": v["status"],
                 "cl": 1 if v["claimed"] else 0,
+                "contrib": 1 if v.get("contribution_only") else 0,
                 "r": v.get("code_repos") or v.get("repos") or [],
                 "loc": v.get("loc_analyzed", 0),
             }
@@ -97,6 +98,9 @@ def load_cohort(reports_dir: str | Path) -> list[dict[str, Any]]:
             "cmine": auth.get("mine", 0),
             "cdisp": auth.get("disputed", 0),
             "cother": auth.get("other", 0),
+            "forks": (data.get("forks") or {}).get("seen", 0),
+            "forksc": (data.get("forks") or {}).get("contributed_to", 0),
+            "forklines": (data.get("forks") or {}).get("contributed_lines", 0),
         })
     return out
 

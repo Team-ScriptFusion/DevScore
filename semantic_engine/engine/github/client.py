@@ -338,6 +338,39 @@ class GitHubClient:
         except (ValueError, TypeError):
             return ""
 
+    def commits_by_author(self, full_name: str, author: str,
+                          max_pages: int = 1) -> list[dict[str, Any]]:
+        """
+        Commits GitHub attributes to one account, server-side filtered.
+
+        The opposite choice from `commits()` below, and deliberately so. There
+        the question is "whose commits are these?", which needs the raw log so
+        that half-matching identities stay visible. Here the question is "what
+        did this person write?", so commits GitHub cannot attribute to them are
+        precisely the ones that must not be credited - filtering server-side is
+        both correct and one call instead of a full log fetch.
+        """
+        try:
+            return self.paginate(
+                f"/repos/{full_name}/commits",
+                params={"author": author, "per_page": 100},
+                max_pages=max_pages,
+            )
+        except GitHubError:
+            return []
+
+    def commit_detail(self, full_name: str, sha: str) -> dict[str, Any] | None:
+        """
+        One commit with its per-file unified diff.
+
+        The `files[].patch` field is what makes contribution mining possible:
+        it is the only place GitHub's REST API tells you which LINES a person
+        added, as opposed to which files exist now. Omitted for binary files
+        and very large diffs, which the caller treats as "no attributable
+        lines" rather than as an error.
+        """
+        return self.get(f"/repos/{full_name}/commits/{sha}", allow_404=True)
+
     def commits(self, full_name: str, max_pages: int = 1) -> list[dict[str, Any]]:
         """
         Recent commits, UNFILTERED by author.
