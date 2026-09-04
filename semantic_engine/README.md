@@ -15,7 +15,7 @@ Job Readiness Score.
 ```bash
 cd semantic_engine
 pip install -r requirements.txt
-python tests/test_engine.py        # 72 tests
+python tests/test_engine.py        # 74 tests
 ```
 
 Every command below is run from `semantic_engine/`. Put the collected CVs in
@@ -81,10 +81,10 @@ python cli.py scan data/cvs
 
 ```
   #  CANDIDATE (from CV)      GITHUB                 SKILLS  NOTE
-  4  THARUSHI BANDARA        TharushiB                 26
-  7  KAVI RANASINGHE              Kavi-R30               9  filename says 'uploader account'
-  9  Binara Silva          no handle                  15
- 13  Ravindu Silva           ravindus7                    1
+  4  THARUSHI BANDARA         TharushiB                  26
+  7  KAVI RANASINGHE          Kavi-R30                    9  filename says 'uploader account'
+  9  Binara Silva             no handle                  15
+ 13  Ravindu Silva            ravindus7                   1
 ```
 
 ```bash
@@ -139,7 +139,7 @@ Run the tests:
 python tests/test_engine.py          # or: python -m pytest tests -q
 ```
 
-72 tests, every one anchored to a failure mode that would produce a *plausible
+74 tests, every one anchored to a failure mode that would produce a *plausible
 but wrong score* rather than a crash — a crash gets noticed, a candidate quietly
 scored 12 points low does not.
 
@@ -661,7 +661,7 @@ batch.py                 cohort runner → scores.csv, verdicts.csv, summary.md
 tools/ablation.py        boolean vs continuous vs expert baseline
 tools/calibrate_weights.py   re-derive scarcity from job-description data
 supabase/schema.sql      persistence tables for Implementation 01's database
-tests/test_engine.py     72 tests, all on silent-failure paths
+tests/test_engine.py     74 tests, all on silent-failure paths
 ```
 
 ---

@@ -679,6 +679,32 @@ def test_conflict_uses_every_evidence_channel_not_just_code():
     assert not binding.has_conflict
 
 
+def test_prose_attribution_never_raises_a_conflict():
+    """
+    A stack scraped from prose is too noisy to accuse on. Caught on the cohort:
+    a description line opening "Constructed a Point of Sale (POS) system" was
+    promoted to a title, swept up the surrounding paragraph, and appeared to
+    claim .NET, C++, React and Spring Boot for one project - all then reported
+    missing. Only an explicit "Technologies:" line or a candidate-supplied
+    repository link is a firm enough basis.
+    """
+    project = CVProject(title="Point of Sale System", skills=["React", "MongoDB"])
+    repos = [_repo("point-of-sale-system")]
+    binding = bind_projects([project], repos,
+                            [_verdict_for("React", []), _verdict_for("MongoDB", [])])[0]
+    assert binding.repo == "point-of-sale-system"
+    assert binding.attribution_explicit is False
+    assert not binding.has_conflict
+    assert "prose" in binding.explanation
+
+
+def test_description_verbs_are_not_project_titles():
+    cv = ("Projects\nInventory Portal\n- Built with React\n"
+          "Constructed a Point of Sale system using MySQL\nEducation\nx")
+    titles = [p.title for p in extract_projects(cv, _scan)]
+    assert titles == ["Inventory Portal"], titles
+
+
 def test_zero_token_overlap_never_binds():
     """A project called "Fabric Defect Detection" must not bind to "FIVORA"."""
     project = CVProject(title="Fabric Defect Detection System", skills=[])

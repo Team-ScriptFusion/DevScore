@@ -64,6 +64,20 @@ def load_cohort(reports_dir: str | Path) -> list[dict[str, Any]]:
             if v["weight"] > 0 and (v["claimed"] or v.get("unclaimed_evidence"))
         ]
         identity = data.get("identity") or {}
+        auth = data.get("authorship") or {}
+        bindings = [
+            {
+                "t": b["project_title"],
+                "r": b["repo"] or "",
+                "m": b["method"],
+                "c": b["confidence"],
+                "insp": b["inspected"],
+                "miss": b["missing_skills"],
+                "conf": b["has_conflict"],
+                "tent": b["tentative"],
+            }
+            for b in (data.get("project_bindings") or [])
+        ]
         out.append({
             "name": data["candidate"],
             "gh": data.get("github_username") or "",
@@ -78,6 +92,11 @@ def load_cohort(reports_dir: str | Path) -> list[dict[str, Any]]:
             "cats": {k: round(v) for k, v in (data.get("category_scores") or {}).items()},
             "warn": data.get("warnings", [])[:4],
             "verdicts": verdicts,
+            "bind": bindings,
+            "own": auth.get("ownership_ratio", 0.0),
+            "cmine": auth.get("mine", 0),
+            "cdisp": auth.get("disputed", 0),
+            "cother": auth.get("other", 0),
         })
     return out
 
@@ -152,6 +171,8 @@ tr.detail .inner{padding:14px 18px 20px;border-bottom:2px solid var(--accent)}
 .chip{font-size:11.5px;padding:3px 9px;border-radius:6px;border:1px solid var(--line)}
 h2{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);
   margin:26px 0 10px;font-weight:600}
+h3{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
+  margin:18px 0 6px;font-weight:600}
 .note{background:var(--weak-bg);border:1px solid var(--line);border-radius:10px;
   padding:11px 15px;font-size:13px;margin:14px 0}
 .cmp{margin-top:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel);
@@ -231,6 +252,49 @@ function detailFor(c) {
   });
   t.appendChild(tb);
   box.appendChild(t);
+
+  if ((c.bind || []).length) {
+    box.appendChild(el('h3', null, 'CV projects vs. repositories'));
+    const bt = el('table');
+    bt.innerHTML = '<thead><tr><th class="nosort"></th><th class="nosort">Project</th>' +
+      '<th class="nosort">Repository</th><th class="nosort">Matched by</th>' +
+      '<th class="nosort">Finding</th></tr></thead>';
+    const btb = el('tbody');
+    c.bind.forEach(b => {
+      let cls = 'g', label = 'No repository';
+      if (b.r && b.conf) { cls = 'gap'; label = 'Mismatch'; }
+      else if (b.r && b.insp) { cls = 'v'; label = 'Consistent'; }
+      else if (b.r) { cls = 'g'; label = 'Not sampled'; }
+      const how = b.m.replace(/_/g, ' ') +
+        (b.m === 'name_match' ? ' \u00b7 ' + Math.round(b.c * 100) + '%' : '');
+      const finding = b.conf
+        ? 'claims ' + esc(b.miss.join(', ')) + ' \u2014 no sign of it there'
+        : (b.r && b.insp ? 'attributed stack is present'
+                         : (b.r ? 'repository not sampled \u2014 no conclusion'
+                                : 'no matching repository'));
+      const tr = el('tr');
+      tr.innerHTML = '<td><span class="pill ' + cls + '">' + label + '</span></td>' +
+        '<td>' + esc(b.t) + '</td><td class="gh">' + esc(b.r || '\u2014') + '</td>' +
+        '<td class="gh">' + esc(how) + '</td><td class="gh">' + finding + '</td>';
+      btb.appendChild(tr);
+    });
+    bt.appendChild(btb);
+    box.appendChild(bt);
+    box.appendChild(el('div', 'note',
+      'Project matching is fuzzy unless the CV links a repository directly, so these ' +
+      'are shown for a recruiter to ask about and are never counted in the score. A ' +
+      'repository that was never sampled makes no claim either way.'));
+  }
+
+  if ((c.cmine + c.cother + c.cdisp) > 0) {
+    box.appendChild(el('div', 'note',
+      'Commit authorship: ' + c.cmine + ' of ' + (c.cmine + c.cdisp + c.cother) +
+      ' commits (' + Math.round(c.own * 100) + '%) are attributable to this candidate; ' +
+      c.cother + ' belong to collaborators' +
+      (c.cdisp ? ', and ' + c.cdisp + ' carry a half-matching identity and are credited to nobody' : '') +
+      '. Reported, not scored \u2014 owning a minority of a team repository is normal.'));
+  }
+
   (c.warn || []).forEach(w => box.appendChild(el('div', 'note', w)));
   return box;
 }
@@ -272,6 +336,15 @@ function render() {
     if (c.namesrc !== 'cv' && c.fname) {
       const nb = el('div', 'thin', 'name from filename (CV unreadable)');
       who.appendChild(nb);
+    }
+    const conflicts = (c.bind || []).filter(b => b.conf);
+    if (conflicts.length) {
+      const cb = el('div');
+      const pill = el('span', 'pill gap',
+        conflicts.length + ' project mismatch' + (conflicts.length > 1 ? 'es' : ''));
+      pill.title = conflicts.map(b => b.t + ': ' + b.miss.join(', ')).join(' | ');
+      cb.appendChild(pill);
+      who.appendChild(cb);
     }
     tr.appendChild(who);
 
@@ -382,6 +455,7 @@ def render_cohort(cohort: list[dict[str, Any]], title: str = "Candidate cohort")
     claims = sum(c["counts"]["verifiable_claims"] for c in scorable)
     verified = sum(c["counts"]["verified"] for c in scorable)
     mean = sum(scores) / len(scores) if scores else 0.0
+    conflicts = sum(1 for c in cohort for b in c.get("bind", []) if b["conf"])
 
     payload = json.dumps(cohort, separators=(",", ":")).replace("</", "<\\/")
 
@@ -398,6 +472,7 @@ def render_cohort(cohort: list[dict[str, Any]], title: str = "Candidate cohort")
     <div class="stat"><b>{mean:.1f}</b><span>mean score</span></div>
     <div class="stat"><b>{verified}</b><span>claims verified in code</span></div>
     <div class="stat"><b>{claims - verified}</b><span>claims without proof</span></div>
+    <div class="stat"><b>{conflicts}</b><span>project mismatches</span></div>
   </div>
 
   <div class="bar">

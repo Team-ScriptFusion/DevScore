@@ -77,6 +77,11 @@ class ProjectBinding:
     # means we never looked inside it, so `missing_skills` stays empty — see
     # bind_projects for why that distinction is load-bearing.
     inspected: bool = False
+    # True when the CV attributed this stack EXPLICITLY - a "Technologies:"
+    # line, or an entry the candidate linked to a repository themselves.
+    # False means the stack was inferred from prose, which is too noisy to
+    # accuse on: see has_conflict.
+    attribution_explicit: bool = False
     explanation: str = ""
 
     @property
@@ -85,7 +90,21 @@ class ProjectBinding:
 
     @property
     def has_conflict(self) -> bool:
-        return bool(self.repo and self.inspected and self.missing_skills)
+        """
+        A mismatch worth showing a recruiter.
+
+        Requires an EXPLICIT attribution, not one scraped from prose. Caught on
+        the cohort: a description line beginning "Constructed a Point of Sale
+        (POS) system" was promoted to a project title and swept up the
+        surrounding prose, so the "project" appeared to claim .NET, C++, React
+        AND Spring Boot at once - and every one of them was then reported
+        missing. Accusing someone on the strength of a paragraph the parser
+        mis-sliced is exactly the failure this module must not have.
+        """
+        return bool(
+            self.repo and self.inspected and self.missing_skills
+            and self.attribution_explicit
+        )
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -185,6 +204,9 @@ def bind_projects(
         # and is preferred; prose mentions are a weaker basis for an accusation.
         claimed_raw = project.declared_stack or project.skills
         binding.claimed_skills = list(claimed_raw)
+        binding.attribution_explicit = bool(
+            project.declared_stack or project.explicit_repo
+        )
 
         matched: RepoEvidence | None = None
 
@@ -280,6 +302,13 @@ def _explain(binding: ProjectBinding, repo: RepoEvidence) -> str:
 
     if not binding.claimed_skills:
         return f"{how} The CV attributes no specific technologies to this project."
+
+    if binding.missing_skills and not binding.attribution_explicit:
+        return (
+            f"{how} The technologies listed for it were read from prose rather than an "
+            "explicit “Technologies:” line, which is too unreliable to draw a "
+            "mismatch from, so none is reported."
+        )
 
     if not binding.missing_skills:
         return (

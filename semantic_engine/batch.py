@@ -15,6 +15,8 @@ Run `python cli.py scan data/cvs` first — it prints the indexed roster that
 Produces, in --out:
     scores.csv        one row per candidate: score, breakdown, counts, coverage
     verdicts.csv      one row per (candidate, skill): the claim-vs-evidence matrix
+    bindings.csv      one row per (candidate, CV project): which repository it
+                      binds to and whether that repository backs its stack
     reports/*.json    the full explainable report per candidate
     summary.md        cohort-level statistics
 
@@ -68,7 +70,19 @@ SCORE_FIELDS = [
     "github_username", "handle_source", "score", "band", "confidence",
     "base_score", "integrity_penalty", "breadth_bonus",
     "claimed", "verifiable_claims", "verified", "weakly_verified", "unverified",
-    "repos_mined", "files_analyzed", "api_calls", "notes",
+    "repos_mined", "files_analyzed", "api_calls",
+    # Commit authorship (mine / disputed / other) and CV-project binding.
+    # Both are reported signals, never score terms - see engine/matching/
+    # binding.py - but the validation study needs them per candidate.
+    "commits_mine", "commits_disputed", "commits_other", "ownership_ratio",
+    "projects_found", "projects_bound", "project_conflicts",
+    "notes",
+]
+
+BINDING_FIELDS = [
+    "candidate", "project", "repo", "method", "confidence", "tentative",
+    "inspected", "claimed_skills", "evidenced_skills", "missing_skills",
+    "has_conflict",
 ]
 
 VERDICT_FIELDS = [
@@ -159,6 +173,7 @@ def run(args) -> int:
 
     scores_path = out / "scores.csv"
     verdicts_path = out / "verdicts.csv"
+    bindings_path = out / "bindings.csv"
     append = bool(skip) and scores_path.exists()
 
     client = GitHubClient(cache_dir=args.cache, offline=args.offline)
@@ -184,11 +199,14 @@ def run(args) -> int:
 
     score_file = scores_path.open("a" if append else "w", encoding="utf-8", newline="")
     verdict_file = verdicts_path.open("a" if append else "w", encoding="utf-8", newline="")
+    binding_file = bindings_path.open("a" if append else "w", encoding="utf-8", newline="")
     score_writer = csv.DictWriter(score_file, fieldnames=SCORE_FIELDS)
     verdict_writer = csv.DictWriter(verdict_file, fieldnames=VERDICT_FIELDS)
+    binding_writer = csv.DictWriter(binding_file, fieldnames=BINDING_FIELDS)
     if not append:
         score_writer.writeheader()
         verdict_writer.writeheader()
+        binding_writer.writeheader()
 
     collected: list[dict] = []
     try:
@@ -229,6 +247,8 @@ def run(args) -> int:
             d = report.to_dict()
             gh = report.github
             name = d["candidate"]
+            auth = d.get("authorship") or {}
+            bindings = d.get("project_bindings") or []
             row = {
                 "candidate": name,
                 "name_source": report.resume.name_source if report.resume else "unknown",
@@ -251,6 +271,13 @@ def run(args) -> int:
                 "repos_mined": len([r for r in gh.repos if r.languages]) if gh else 0,
                 "files_analyzed": sum(len(r.fetched_files) for r in gh.repos) if gh else 0,
                 "api_calls": client.calls - calls_before,
+                "commits_mine": auth.get("mine", 0),
+                "commits_disputed": auth.get("disputed", 0),
+                "commits_other": auth.get("other", 0),
+                "ownership_ratio": auth.get("ownership_ratio", 0.0),
+                "projects_found": len(report.resume.projects) if report.resume else 0,
+                "projects_bound": sum(1 for b in bindings if b["repo"]),
+                "project_conflicts": sum(1 for b in bindings if b["has_conflict"]),
                 "notes": " | ".join(d["warnings"])[:400],
             }
             score_writer.writerow(row)
@@ -287,6 +314,21 @@ def run(args) -> int:
                     (e.handle_note for e in picked if e.path == pdf), ""
                 ),
             }
+            for b in bindings:
+                binding_writer.writerow({
+                    "candidate": name,
+                    "project": b["project_title"],
+                    "repo": b["repo"] or "",
+                    "method": b["method"],
+                    "confidence": b["confidence"],
+                    "tentative": int(b["tentative"]),
+                    "inspected": int(b["inspected"]),
+                    "claimed_skills": ";".join(b["claimed_skills"]),
+                    "evidenced_skills": ";".join(b["evidenced_skills"]),
+                    "missing_skills": ";".join(b["missing_skills"]),
+                    "has_conflict": int(b["has_conflict"]),
+                })
+
             safe = re.sub(r"[^A-Za-z0-9_-]+", "_", name)[:60] or "candidate"
             (out / "reports" / f"{safe}.json").write_text(
                 json.dumps(d, indent=2), encoding="utf-8"
@@ -294,11 +336,13 @@ def run(args) -> int:
 
             score_file.flush()
             verdict_file.flush()
+            binding_file.flush()
             print(f"{d['score']:5.1f}  ({d['counts']['verified']}v/"
                   f"{d['counts']['unverified']}u, conf {d['confidence']:.0%})")
     finally:
         score_file.close()
         verdict_file.close()
+        binding_file.close()
 
     _summarise(collected, out, client)
     return 0

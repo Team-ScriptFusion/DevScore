@@ -128,6 +128,8 @@ _CONTINUATION = re.compile(
     r"focused|contributed|maintained|supported|coordinated|verified|demonstrat|"
     r"independently|successfully|currently|also|additionally|furthermore|"
     r"achiev|deliver|applied|utiliz|handled|assisted|ensured|reduced|increased|"
+    r"constructed|constructing|engineered|architected|programmed|wrote|writing|"
+    r"produced|established|introduced|refactored|migrated|optimis|optimiz|"
     r"and|with|for|the|a|an|this|it|features?|technolog|experience)\b",
     re.IGNORECASE,
 )
