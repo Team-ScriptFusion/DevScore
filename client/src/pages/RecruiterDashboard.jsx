@@ -28,6 +28,29 @@ function StatusBadge({ verified }) {
   );
 }
 
+const READINESS_BADGE = {
+  pending: 'badge--pending',
+  success: 'badge--verified',
+  failed: 'badge--missing',
+};
+
+function ReadinessBadge({ status, score, band }) {
+  if (status === 'success') {
+    return (
+      <span className={`badge ${READINESS_BADGE.success}`} title={band}>
+        {score} / 100
+      </span>
+    );
+  }
+  if (status === 'pending') {
+    return <span className={`badge ${READINESS_BADGE.pending}`}>Scoring…</span>;
+  }
+  if (status === 'failed') {
+    return <span className={`badge ${READINESS_BADGE.failed}`}>Failed</span>;
+  }
+  return <span className="muted">—</span>;
+}
+
 const SKILLS_PREVIEW_LIMIT = 4;
 
 function SkillsPreview({ status, byCategory }) {
@@ -202,6 +225,7 @@ export default function RecruiterDashboard() {
                     <th>Resume</th>
                     <th>GitHub</th>
                     <th>Skills</th>
+                    <th>Readiness</th>
                     <th aria-label="Actions" />
                   </tr>
                 </thead>
@@ -226,6 +250,13 @@ export default function RecruiterDashboard() {
                       </td>
                       <td>
                         <SkillsPreview status={c.skillsStatus} byCategory={c.claimedSkills} />
+                      </td>
+                      <td>
+                        <ReadinessBadge
+                          status={c.readinessStatus}
+                          score={c.readinessScore}
+                          band={c.readinessBand}
+                        />
                       </td>
                       <td className="data-table__actions">
                         <Link to={`/recruiter/candidates/${c.id}`} className="btn-secondary">
