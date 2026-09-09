@@ -275,6 +275,74 @@ create table if not exists public.code_analysis_summary (
   computed_at            timestamptz not null default now()
 );
 
+-- ---------------------------------------------------------------------------
+-- expert_scores  — industry-expert judgment per student, the training/
+-- validation target for weight-fitting. SYNTHETIC ONLY as of this schema's
+-- introduction (design spec §2) — expert_id is a plain text identifier,
+-- not a users FK, since experts are not DevScore accounts in this pass.
+-- ---------------------------------------------------------------------------
+create table if not exists public.expert_scores (
+  id           uuid primary key default gen_random_uuid(),
+  user_id      uuid not null references public.users (id) on delete cascade,
+  expert_id    text not null,
+  score        numeric not null,
+  submitted_at timestamptz not null default now()
+);
+create index if not exists expert_scores_user_id_idx on public.expert_scores (user_id);
+
+-- ---------------------------------------------------------------------------
+-- train_test_split  — locked, immutable-once-assigned train/train split
+-- for weight-fitting (module spec §10).
+-- ---------------------------------------------------------------------------
+create table if not exists public.train_test_split (
+  user_id     uuid primary key references public.users (id) on delete cascade,
+  split       text not null check (split in ('train', 'test')),
+  assigned_at timestamptz not null default now()
+);
+
+-- ---------------------------------------------------------------------------
+-- skill_weights  — one row per skill-category (plus 'code_quality') per
+-- frozen weights_version. Never recomputed in place; a new version is a
+-- new set of rows.
+-- ---------------------------------------------------------------------------
+create table if not exists public.skill_weights (
+  id              uuid primary key default gen_random_uuid(),
+  category        text not null,
+  weight          numeric not null check (weight >= 0),
+  weights_version text not null,
+  fitted_at       timestamptz not null default now()
+);
+create index if not exists skill_weights_version_idx on public.skill_weights (weights_version);
+
+-- ---------------------------------------------------------------------------
+-- wvr_scores  — computed WVR per student for a given weights_version.
+-- weights_version is a plain text match against skill_weights, not a FK
+-- (skill_weights has multiple rows per version, so weights_version isn't
+-- unique there — design spec §3).
+-- ---------------------------------------------------------------------------
+create table if not exists public.wvr_scores (
+  id              uuid primary key default gen_random_uuid(),
+  user_id         uuid not null references public.users (id) on delete cascade,
+  wvr_score       numeric not null,
+  weights_version text not null,
+  computed_at     timestamptz not null default now()
+);
+create index if not exists wvr_scores_user_id_idx on public.wvr_scores (user_id);
+
+-- ---------------------------------------------------------------------------
+-- validation_results  — headline agreement statistics for a given
+-- weights_version (spearman_rho/mae on the test split, inter_rater_alpha
+-- on overlapping expert scores).
+-- ---------------------------------------------------------------------------
+create table if not exists public.validation_results (
+  id              uuid primary key default gen_random_uuid(),
+  weights_version text not null,
+  metric_name     text not null check (metric_name in ('spearman_rho', 'mae', 'inter_rater_alpha')),
+  metric_value    numeric not null,
+  sample_size     int not null,
+  computed_at     timestamptz not null default now()
+);
+
 -- The API accesses these tables only through the service-role key, so RLS is
 -- enabled with no public policies (deny-by-default for anon/authenticated).
 alter table public.users enable row level security;
@@ -289,3 +357,8 @@ alter table public.github_evidence enable row level security;
 alter table public.skill_verification enable row level security;
 alter table public.code_analysis enable row level security;
 alter table public.code_analysis_summary enable row level security;
+alter table public.expert_scores enable row level security;
+alter table public.train_test_split enable row level security;
+alter table public.skill_weights enable row level security;
+alter table public.wvr_scores enable row level security;
+alter table public.validation_results enable row level security;

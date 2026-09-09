@@ -50,6 +50,10 @@ export const env = {
     url: process.env.CODE_ANALYSIS_URL || 'http://localhost:5003',
     apiKey: process.env.CODE_ANALYSIS_API_KEY || '',
   },
+  scoring: {
+    url: process.env.SCORING_URL || 'http://localhost:5004',
+    apiKey: process.env.SCORING_API_KEY || '',
+  },
 };
 
 /** True only when the CV parser service URL is configured. */
