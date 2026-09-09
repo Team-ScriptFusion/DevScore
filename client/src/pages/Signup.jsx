@@ -83,7 +83,7 @@ export default function Signup() {
               &larr; Back to home
             </Link>
             <span className="brand">
-              <Logo showText subtitle="AI Job Readiness Scoring" />
+              <Logo height={30} subtitle="AI Job Readiness Scoring" />
             </span>
 
             <h1>Create your DevScore account</h1>

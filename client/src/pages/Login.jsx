@@ -61,7 +61,7 @@ export default function Login() {
               &larr; Back to home
             </Link>
             <span className="brand">
-              <Logo showText subtitle="AI Job Readiness Scoring" />
+              <Logo height={30} subtitle="AI Job Readiness Scoring" />
             </span>
 
             <h1>Sign in to DevScore</h1>

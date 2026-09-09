@@ -95,7 +95,7 @@ export default function Sidebar({ open = false, onClose }) {
   return (
     <aside className={`sidebar${open ? ' is-open' : ''}`} id="app-sidebar">
       <div className="sidebar__top">
-        <Logo subtitle={config.subtitle} />
+        <Logo theme="dark" height={26} subtitle={config.subtitle} />
         {/* only rendered as a control on mobile, where the sidebar is a drawer */}
         <button
           type="button"

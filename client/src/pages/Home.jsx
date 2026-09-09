@@ -73,15 +73,12 @@ const BREAKDOWN = [
   { name: 'GraphQL', label: 'Unverified', fg: '#dc2626', pct: 12 },
 ];
 
-function BrandMark({ size = 30 }) {
+function BrandMark({ height = 30 }) {
   return (
     <img
-      src="/brand/devscore-mark.png"
-      width={size}
-      height={size}
-      alt=""
-      aria-hidden="true"
-      style={{ display: 'block' }}
+      src="/brand/devscore-logo-black.png"
+      alt="DevScore"
+      style={{ height, width: 'auto', display: 'block' }}
     />
   );
 }
@@ -261,7 +258,6 @@ export default function Home() {
       <header className="home-header">
         <span className="home-brand">
           <BrandMark />
-          <span className="home-brand__name">DevScore</span>
         </span>
         <nav className="home-nav">
           <a href="#features">Features</a>
@@ -468,8 +464,7 @@ export default function Home() {
       <footer className="home-footer">
         <div className="home-footer__inner">
           <span className="home-footer__brand">
-            <BrandMark size={24} />
-            <span>DevScore</span>
+            <BrandMark height={22} />
           </span>
           <nav className="home-footer__nav">
             <a href="#features">Features</a>
