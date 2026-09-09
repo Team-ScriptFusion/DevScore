@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout.jsx';
+import PageHeader from '../components/PageHeader.jsx';
 import SkillChips from '../components/SkillChips.jsx';
 import ReadinessScore from '../components/ReadinessScore.jsx';
 import GithubEvidence from '../components/GithubEvidence.jsx';
+import EmptyState from '../components/EmptyState.jsx';
 import { InlineLoader } from '../components/Spinner.jsx';
 import { resumeApi } from '../lib/api.js';
+import { absoluteDate, relativeDate } from '../lib/format.js';
+import { ResumeIcon } from '../components/FeatureIcons.jsx';
 
 const STATUS_LABEL = {
   pending: { text: 'Extracting…', badge: 'badge--pending' },
@@ -58,39 +62,41 @@ export default function SkillsStatus() {
 
   return (
     <DashboardLayout>
-      <h1 className="page-title">Skills Status</h1>
-      <p className="page-subtitle">
-        The skills we extracted from your resume — this is exactly what
-        recruiters see.
-      </p>
+      <PageHeader
+        title="Skills Status"
+        subtitle="The skills we extracted from your resume — this is exactly what recruiters see."
+        actions={
+          status?.uploaded && (
+            <Link to="/student/resume" className="btn-secondary">
+              Replace resume
+            </Link>
+          )
+        }
+      />
 
       {loading ? (
         <InlineLoader />
       ) : !status?.uploaded ? (
-        <div className="card" style={{ maxWidth: 480 }}>
-          <p className="muted">
-            You haven&rsquo;t uploaded a resume yet, so there&rsquo;s nothing
-            to extract.
-          </p>
-          <Link to="/student/resume" className="btn-primary" style={{ width: 'auto' }}>
-            Upload Resume
-          </Link>
+        <div className="card">
+          <EmptyState
+            Icon={ResumeIcon}
+            title="No resume uploaded yet"
+            description="There's nothing to extract until you upload a PDF resume. We'll pull out the skills you claim and verify them against your GitHub."
+            action={
+              <Link to="/student/resume" className="btn-primary">
+                Upload Resume
+              </Link>
+            }
+          />
         </div>
       ) : (
         <div className="card">
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: 16,
-            }}
-          >
+          <div className="card-head">
             <div>
-              <h3 style={{ margin: 0 }}>{status.filename}</h3>
+              <h3>{status.filename}</h3>
               {status.skills?.extractedAt && (
-                <p className="muted" style={{ margin: '2px 0 0' }}>
-                  Extracted {new Date(status.skills.extractedAt).toLocaleString()}
+                <p className="muted" title={absoluteDate(status.skills.extractedAt)}>
+                  Extracted {relativeDate(status.skills.extractedAt)}
                 </p>
               )}
             </div>
@@ -104,27 +110,24 @@ export default function SkillsStatus() {
           />
 
           {skillsStatus === 'failed' && (
-            <Link
-              to="/student/resume"
-              className="btn-secondary"
-              style={{ width: 'auto', marginTop: 16 }}
-            >
-              Re-upload resume
-            </Link>
+            <div className="state-panel__actions">
+              <Link to="/student/resume" className="btn-secondary">
+                Re-upload resume
+              </Link>
+            </div>
           )}
-
         </div>
       )}
 
       {status?.uploaded && (
         <>
-          <div style={{ marginTop: 20 }}>
+          <div className="card--stack">
             <ReadinessScore
               readiness={status.readiness}
               emptyHint="Connect your GitHub account to unlock a readiness score based on your actual code."
             />
           </div>
-          <div style={{ marginTop: 20 }}>
+          <div className="card--stack">
             <GithubEvidence
               readiness={status.readiness}
               emptyHint="Connect your GitHub account to see what evidence we can find in your public repositories."

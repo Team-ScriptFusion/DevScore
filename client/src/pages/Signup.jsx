@@ -151,7 +151,7 @@ export default function Signup() {
                 />
               </label>
 
-              <button type="submit" className="btn-primary" disabled={submitting}>
+              <button type="submit" className="btn-primary btn-block" disabled={submitting}>
                 {submitting ? 'Please wait…' : 'Create account'}
               </button>
             </form>
