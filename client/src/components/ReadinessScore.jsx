@@ -1,3 +1,6 @@
+import ScoreRing, { ScoreRingEmpty } from './ScoreRing.jsx';
+import Meter from './Meter.jsx';
+
 const STATUS_LABEL = {
   pending: { text: 'Scoring…', badge: 'badge--pending' },
   success: { text: 'Scored', badge: 'badge--verified' },
@@ -22,70 +25,81 @@ const GAP_LABEL = {
  * are backed by code vs not), the scoring breakdown, and any warnings.
  * Shared between the student's own view and the recruiter's candidate view
  * so both render the same shape (see server/src/models/ReadinessReport.js).
+ *
+ * Category scores render as meters rather than a label/number list: the whole
+ * point of the section is which areas are strong relative to the others, and a
+ * column of digits makes the reader do that comparison themselves.
  */
 export default function ReadinessScore({ readiness, emptyHint }) {
   const status = readiness?.status;
   const label = STATUS_LABEL[status];
   const gap = readiness?.evidenceGap;
+  const hasGap =
+    gap && gap.verified.length + gap.weakly_verified.length + gap.unverified.length > 0;
 
   return (
     <div className="card">
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: 12,
-        }}
-      >
-        <h3 style={{ margin: 0 }}>Job Readiness Score</h3>
+      <div className="card-head">
+        <h3>Job Readiness Score</h3>
         {label && <span className={`badge ${label.badge}`}>{label.text}</span>}
       </div>
 
       {status === 'success' ? (
         <>
-          <p style={{ marginBottom: 4 }}>
-            <strong style={{ fontSize: '1.6em' }}>{readiness.score}</strong>
-            <span className="muted"> / 100 &mdash; {readiness.band}</span>
-          </p>
-          {readiness.confidence != null && (
-            <p className="muted" style={{ marginTop: 0, marginBottom: 16, fontSize: '0.9em' }}>
-              Confidence {Math.round(readiness.confidence * 100)}% &mdash; how much evidence
-              this score rests on.
-            </p>
-          )}
+          <div className="readiness__summary">
+            <ScoreRing
+              value={readiness.score}
+              size="md"
+              suffix="/100"
+              label={`Readiness score ${readiness.score} out of 100`}
+            />
+            <div>
+              <p className="readiness__band">{readiness.band}</p>
+              <p className="muted">
+                Measured against the claimed skills we could verify in real code.
+              </p>
+              {readiness.confidence != null && (
+                <div className="readiness__confidence">
+                  <Meter
+                    size="sm"
+                    value={Math.round(readiness.confidence * 100)}
+                    label="Confidence"
+                    valueLabel={`${Math.round(readiness.confidence * 100)}%`}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
 
           {readiness.categoryScores && Object.keys(readiness.categoryScores).length > 0 && (
-            <div style={{ marginBottom: 16 }}>
-              <h4 style={{ margin: '0 0 8px' }}>By Category</h4>
-              {Object.entries(readiness.categoryScores).map(([category, score]) => (
-                <div
-                  key={category}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    maxWidth: 320,
-                    marginBottom: 4,
-                  }}
-                >
-                  <span className="muted">{category}</span>
-                  <span>{score}</span>
-                </div>
-              ))}
+            <div className="readiness__section">
+              <h4 className="readiness__section-title">By Category</h4>
+              <div className="readiness__categories">
+                {Object.entries(readiness.categoryScores).map(([category, score]) => (
+                  <Meter
+                    key={category}
+                    value={score}
+                    label={category}
+                    valueLabel={String(score)}
+                  />
+                ))}
+              </div>
             </div>
           )}
 
-          {gap && (gap.verified.length + gap.weakly_verified.length + gap.unverified.length > 0) && (
-            <div style={{ marginBottom: 16 }}>
-              <h4 style={{ margin: '0 0 8px' }}>Evidence Gap</h4>
+          {hasGap && (
+            <div className="readiness__section">
+              <h4 className="readiness__section-title">Evidence Gap</h4>
               {['verified', 'weakly_verified', 'unverified'].map(
                 (bucket) =>
                   gap[bucket]?.length > 0 && (
-                    <div key={bucket} style={{ marginBottom: 8 }}>
-                      <span className="skill-group__label">{GAP_LABEL[bucket]}</span>
+                    <div className="readiness__gap-group" key={bucket}>
+                      <span className="skill-group__label">
+                        {GAP_LABEL[bucket]} ({gap[bucket].length})
+                      </span>
                       <div className="skill-chips">
                         {gap[bucket].map((skill) => (
-                          <span key={skill} className={`badge ${GAP_BADGE[bucket]}`} style={{ marginRight: 6 }}>
+                          <span key={skill} className={`badge ${GAP_BADGE[bucket]}`}>
                             {skill}
                           </span>
                         ))}
@@ -96,37 +110,45 @@ export default function ReadinessScore({ readiness, emptyHint }) {
             </div>
           )}
 
-          {readiness.breakdown && (
-            <p className="muted" style={{ fontSize: '0.85em', marginBottom: 16 }}>
-              Raw ratio {readiness.breakdown.raw_ratio} shrunk to base score{' '}
-              {readiness.breakdown.base_score}
-              {readiness.breakdown.integrity_penalty > 0 &&
-                `, integrity penalty -${readiness.breakdown.integrity_penalty}`}
-              {readiness.breakdown.breadth_bonus > 0 &&
-                `, breadth bonus +${readiness.breakdown.breadth_bonus}`}
-              .
-            </p>
+          {readiness.warnings?.length > 0 && (
+            <div className="readiness__section">
+              <h4 className="readiness__section-title">Warnings</h4>
+              <ul className="readiness__warnings">
+                {readiness.warnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            </div>
           )}
 
-          {readiness.warnings?.length > 0 && (
-            <ul className="muted" style={{ margin: 0, paddingLeft: 18, fontSize: '0.9em' }}>
-              {readiness.warnings.map((warning) => (
-                <li key={warning}>{warning}</li>
-              ))}
-            </ul>
+          {/* Available for anyone who wants to audit the number, but folded away
+              so it doesn't compete with the score it explains. */}
+          {readiness.breakdown && (
+            <details className="readiness__details">
+              <summary>How this score was calculated</summary>
+              <p className="readiness__breakdown">
+                Raw ratio {readiness.breakdown.raw_ratio} shrunk to base score{' '}
+                {readiness.breakdown.base_score}
+                {readiness.breakdown.integrity_penalty > 0 &&
+                  `, integrity penalty -${readiness.breakdown.integrity_penalty}`}
+                {readiness.breakdown.breadth_bonus > 0 &&
+                  `, breadth bonus +${readiness.breakdown.breadth_bonus}`}
+                .
+              </p>
+            </details>
           )}
         </>
-      ) : status === 'pending' ? (
-        <p className="muted" style={{ margin: 0 }}>
-          Verifying claimed skills against GitHub activity &mdash; this can take up to a minute.
-        </p>
-      ) : status === 'failed' ? (
-        <p className="muted" style={{ margin: 0 }}>
-          We couldn&rsquo;t score this GitHub evidence
-          {readiness?.error ? ` (${readiness.error})` : ''}. Try again in a bit.
-        </p>
       ) : (
-        <p className="muted" style={{ margin: 0 }}>{emptyHint}</p>
+        <div className="readiness__summary readiness__summary--empty">
+          <ScoreRingEmpty size="md" hint={status === 'pending' ? '…' : '—'} />
+          <p className="muted">
+            {status === 'pending'
+              ? 'Verifying claimed skills against GitHub activity — this can take up to a minute.'
+              : status === 'failed'
+                ? `We couldn’t score this GitHub evidence${readiness?.error ? ` (${readiness.error})` : ''}. Try again in a bit.`
+                : emptyHint}
+          </p>
+        </div>
       )}
     </div>
   );

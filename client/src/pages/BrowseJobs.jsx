@@ -1,8 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout.jsx';
+import PageHeader from '../components/PageHeader.jsx';
+import EmptyState from '../components/EmptyState.jsx';
+import useReveal from '../hooks/useReveal.js';
 import { InlineLoader } from '../components/Spinner.jsx';
+import { useSearch, matches } from '../context/SearchContext.jsx';
 import { jobsApi } from '../lib/api.js';
+import { BriefcaseIcon, InboxIcon } from '../components/DashboardIcons.jsx';
 
 const EMPLOYMENT_LABELS = {
   'full-time': 'Full-time',
@@ -32,6 +37,8 @@ export default function BrowseJobs() {
     const code = searchParams.get('error');
     return code ? ERROR_MESSAGES[code] || '' : '';
   });
+
+  const query = useSearch('Search roles by title, location or skill…');
 
   useEffect(() => {
     if (!searchParams.get('error')) return;
@@ -84,30 +91,51 @@ export default function BrowseJobs() {
 
   const appliedCount = jobs.filter((j) => j.applied).length;
 
+  const visible = useMemo(
+    () =>
+      jobs.filter((j) =>
+        matches(query, j.title, j.location, j.description, (j.requiredSkills || []).join(' ')),
+      ),
+    [jobs, query],
+  );
+
+  const gridRef = useReveal([loading, visible.length], { enabled: !loading });
+
   return (
     <DashboardLayout>
-      <h1 className="page-title">Job Roles</h1>
-      <p className="page-subtitle">
-        Pick the roles you&rsquo;re applying for. Your resume and GitHub connection are
-        shared across every application, so you only set them up once.
-      </p>
+      <PageHeader
+        title="Job Roles"
+        subtitle="Pick the roles you're applying for. Your resume and GitHub connection are shared across every application, so you only set them up once."
+      />
 
       {error && (
-        <div className="alert alert--error" style={{ marginBottom: 16 }}>{error}</div>
+        <div className="alert alert--error alert--stack" role="alert">
+          {error}
+        </div>
       )}
 
       {loading ? (
         <InlineLoader />
       ) : jobs.length === 0 ? (
-        <div className="card" style={{ maxWidth: 480 }}>
-          <p className="muted">
-            No open roles have been posted yet. Check back once a recruiter publishes one.
-          </p>
+        <div className="card">
+          <EmptyState
+            Icon={BriefcaseIcon}
+            title="No open roles yet"
+            description="No recruiter has published a role so far. Check back soon — new postings appear here as they go live."
+          />
+        </div>
+      ) : visible.length === 0 ? (
+        <div className="card">
+          <EmptyState
+            Icon={InboxIcon}
+            title="No matching roles"
+            description="Nothing matches your search. Try a different title, location or skill."
+          />
         </div>
       ) : (
         <>
-          <div className="job-grid">
-            {jobs.map((job) => {
+          <div className="job-grid" ref={gridRef}>
+            {visible.map((job) => {
               const closed = job.status === 'closed';
               const busy = busyId === job.id;
               return (
@@ -167,15 +195,20 @@ export default function BrowseJobs() {
           </div>
 
           {appliedCount > 0 && (
-            <div className="card" style={{ marginTop: 20 }}>
-              <h3 style={{ marginTop: 0 }}>Next step</h3>
-              <p className="muted" style={{ marginTop: -8, marginBottom: 16 }}>
-                You&rsquo;ve applied to {appliedCount} role{appliedCount === 1 ? '' : 's'}. Upload
-                your resume and connect GitHub so recruiters have evidence to review.
-              </p>
-              <Link to="/student/resume" className="btn-primary job-card__cta">
-                Upload Resume
-              </Link>
+            <div className="card card--stack">
+              <div className="card-head">
+                <div>
+                  <h3>Next step</h3>
+                  <p className="muted">
+                    You&rsquo;ve applied to {appliedCount} role
+                    {appliedCount === 1 ? '' : 's'}. Upload your resume and connect
+                    GitHub so recruiters have evidence to review.
+                  </p>
+                </div>
+                <Link to="/student/resume" className="btn-primary">
+                  Upload Resume
+                </Link>
+              </div>
             </div>
           )}
         </>

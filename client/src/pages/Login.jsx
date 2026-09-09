@@ -95,7 +95,7 @@ export default function Login() {
                 />
               </label>
 
-              <button type="submit" className="btn-primary" disabled={submitting}>
+              <button type="submit" className="btn-primary btn-block" disabled={submitting}>
                 {submitting ? 'Please wait…' : 'Sign in'}
               </button>
             </form>

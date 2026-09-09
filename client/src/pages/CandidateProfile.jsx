@@ -5,17 +5,9 @@ import SkillChips from '../components/SkillChips.jsx';
 import ReadinessScore from '../components/ReadinessScore.jsx';
 import GithubEvidence from '../components/GithubEvidence.jsx';
 import { recruiterApi } from '../lib/api.js';
+import { initials, avatarTint, relativeDate, absoluteDate } from '../lib/format.js';
 import { ResumeIcon, GithubMiningIcon } from '../components/FeatureIcons.jsx';
 import { InlineLoader } from '../components/Spinner.jsx';
-
-function initials(name) {
-  return (name || '?')
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0].toUpperCase())
-    .join('');
-}
 
 /** Read-only candidate profile detail (FR 47/48), including the semantic_engine job readiness score. */
 export default function CandidateProfile() {
@@ -39,38 +31,42 @@ export default function CandidateProfile() {
 
   return (
     <DashboardLayout>
-      <Link to="/recruiter" className="auth-back" style={{ marginBottom: 16 }}>
+      <Link to="/recruiter" className="auth-back auth-back--stack">
         &larr; Back to candidates
       </Link>
 
       {loading ? (
         <InlineLoader />
       ) : error ? (
-        <div className="alert alert--error">{error}</div>
+        <div className="alert alert--error" role="alert">
+          {error}
+        </div>
       ) : (
         <>
           <div className="profile-header card">
-            <span className="avatar avatar--lg">{initials(candidate.name)}</span>
+            <span className={`avatar avatar--lg avatar--tint-${avatarTint(candidate.name)}`}>
+              {initials(candidate.name)}
+            </span>
             <div>
-              <h1 className="page-title" style={{ marginBottom: 2 }}>
-                {candidate.name}
-              </h1>
+              <h1 className="page-title profile-header__name">{candidate.name}</h1>
               <p className="muted">{candidate.email}</p>
             </div>
           </div>
 
           {candidate.appliedRoles?.length > 0 && (
-            <div className="card" style={{ marginTop: 20 }}>
-              <h3 style={{ marginTop: 0 }}>Applied For</h3>
-              <p className="muted" style={{ marginTop: -8, marginBottom: 16 }}>
-                Your postings this candidate applied to.
-              </p>
-              <ul className="applied-list" style={{ marginBottom: 0 }}>
+            <div className="card card--stack">
+              <div className="card-head">
+                <div>
+                  <h3>Applied For</h3>
+                  <p className="muted">Your postings this candidate applied to.</p>
+                </div>
+              </div>
+              <ul className="applied-list applied-list--flush">
                 {candidate.appliedRoles.map((r) => (
                   <li className="applied-list__item" key={r.jobId}>
                     <span className="applied-list__title">{r.jobTitle}</span>
-                    <span className="applied-list__meta">
-                      Applied {new Date(r.appliedAt).toLocaleDateString()}
+                    <span className="applied-list__meta" title={absoluteDate(r.appliedAt)}>
+                      Applied {relativeDate(r.appliedAt)}
                     </span>
                   </li>
                 ))}
@@ -78,7 +74,7 @@ export default function CandidateProfile() {
             </div>
           )}
 
-          <div className="setup-grid" style={{ marginTop: 20 }}>
+          <div className="setup-grid setup-grid--stack">
             <div className={`setup-card card ${candidate.resumeVerified ? 'is-done' : ''}`}>
               <div className="setup-card__header">
                 <span className="setup-card__icon">
@@ -92,8 +88,8 @@ export default function CandidateProfile() {
               {candidate.resumeVerified ? (
                 <>
                   <p className="muted">{candidate.resumeFilename}</p>
-                  <p className="setup-card__meta">
-                    Uploaded {new Date(candidate.resumeUploadedAt).toLocaleDateString()}
+                  <p className="setup-card__meta" title={absoluteDate(candidate.resumeUploadedAt)}>
+                    Uploaded {relativeDate(candidate.resumeUploadedAt)}
                   </p>
                 </>
               ) : (
@@ -114,8 +110,11 @@ export default function CandidateProfile() {
               {candidate.githubVerified ? (
                 <>
                   <p className="muted">@{candidate.githubUsername}</p>
-                  <p className="setup-card__meta">
-                    Connected {new Date(candidate.githubConnectedAt).toLocaleDateString()}
+                  <p
+                    className="setup-card__meta"
+                    title={absoluteDate(candidate.githubConnectedAt)}
+                  >
+                    Connected {relativeDate(candidate.githubConnectedAt)}
                   </p>
                 </>
               ) : (
@@ -125,12 +124,16 @@ export default function CandidateProfile() {
           </div>
 
           {candidate.resumeVerified && (
-            <div className="card" style={{ marginTop: 20 }}>
-              <h3 style={{ marginTop: 0 }}>Claimed Skills</h3>
-              <p className="muted" style={{ marginTop: -8, marginBottom: 16 }}>
-                Extracted from the candidate&rsquo;s resume — not yet
-                verified against GitHub evidence.
-              </p>
+            <div className="card card--stack">
+              <div className="card-head">
+                <div>
+                  <h3>Claimed Skills</h3>
+                  <p className="muted">
+                    Extracted from the candidate&rsquo;s resume — not yet verified
+                    against GitHub evidence.
+                  </p>
+                </div>
+              </div>
               <SkillChips
                 status={candidate.skillsStatus}
                 byCategory={candidate.claimedSkills}
@@ -139,7 +142,7 @@ export default function CandidateProfile() {
             </div>
           )}
 
-          <div style={{ marginTop: 20 }}>
+          <div className="card--stack">
             <ReadinessScore
               readiness={candidate.readiness}
               emptyHint={
@@ -149,7 +152,7 @@ export default function CandidateProfile() {
               }
             />
           </div>
-          <div style={{ marginTop: 20 }}>
+          <div className="card--stack">
             <GithubEvidence
               readiness={candidate.readiness}
               emptyHint={

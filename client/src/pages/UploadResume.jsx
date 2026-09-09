@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout.jsx';
+import PageHeader from '../components/PageHeader.jsx';
 import { InlineLoader } from '../components/Spinner.jsx';
 import { jobsApi, resumeApi } from '../lib/api.js';
+import { relativeDate, absoluteDate } from '../lib/format.js';
+import { ResumeIcon } from '../components/FeatureIcons.jsx';
+import { LockIcon } from '../components/DashboardIcons.jsx';
 
 function formatSize(bytes) {
   if (!bytes) return '';
@@ -59,63 +63,82 @@ export default function UploadResume() {
 
   return (
     <DashboardLayout>
-      <h1 className="page-title">Upload Resume</h1>
-      <p className="page-subtitle">
-        Upload a PDF resume so we can extract the skills you claim and match
-        them against your GitHub evidence.
-      </p>
+      <PageHeader
+        title="Upload Resume"
+        subtitle="Upload a PDF resume so we can extract the skills you claim and match them against your GitHub evidence."
+      />
 
       {error && (
-        <div className="alert alert--error" style={{ marginBottom: 16 }}>
+        <div className="alert alert--error alert--stack" role="alert">
           {error}
         </div>
       )}
 
-      <div className="card" style={{ maxWidth: 480 }}>
+      <div className="card card--narrow">
         {loading ? (
           <InlineLoader label="Checking resume status…" />
         ) : status?.uploaded ? (
-          <>
-            <p>
-              <strong>Uploaded</strong> {status.filename}
-            </p>
-            <p className="muted">
-              {formatSize(status.sizeBytes)}
-              {status.uploadedAt
-                ? ` · ${new Date(status.uploadedAt).toLocaleDateString()}`
-                : ''}
-            </p>
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => inputRef.current?.click()}
-              disabled={uploading}
-            >
-              {uploading ? 'Uploading…' : 'Replace resume'}
-            </button>
-          </>
+          <div className="state-panel">
+            <span className="state-panel__icon state-panel__icon--done">
+              <ResumeIcon />
+            </span>
+            <div className="state-panel__body">
+              <span className="badge badge--verified">Uploaded</span>
+              <h3 className="state-panel__title">{status.filename}</h3>
+              <p className="muted" title={absoluteDate(status.uploadedAt)}>
+                {formatSize(status.sizeBytes)}
+                {status.uploadedAt ? ` · ${relativeDate(status.uploadedAt)}` : ''}
+              </p>
+              <div className="state-panel__actions">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => inputRef.current?.click()}
+                  disabled={uploading}
+                >
+                  {uploading ? 'Uploading…' : 'Replace resume'}
+                </button>
+              </div>
+            </div>
+          </div>
         ) : !roleApplied ? (
-          <>
-            <p className="muted">
-              Select a job role first — your resume is reviewed against the
-              roles you&rsquo;ve applied for.
-            </p>
-            <Link to="/student/jobs" className="btn-primary">
-              Browse Job Roles
-            </Link>
-          </>
+          <div className="state-panel">
+            <span className="state-panel__icon state-panel__icon--locked">
+              <LockIcon />
+            </span>
+            <div className="state-panel__body">
+              <h3 className="state-panel__title">Select a job role first</h3>
+              <p className="muted">
+                Your resume is reviewed against the roles you&rsquo;ve applied for,
+                so we need to know which ones those are.
+              </p>
+              <div className="state-panel__actions">
+                <Link to="/student/jobs" className="btn-primary">
+                  Browse Job Roles
+                </Link>
+              </div>
+            </div>
+          </div>
         ) : (
-          <>
-            <p className="muted">PDF only, up to 5MB.</p>
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={() => inputRef.current?.click()}
-              disabled={uploading}
-            >
-              {uploading ? 'Uploading…' : 'Upload Resume'}
-            </button>
-          </>
+          <div className="state-panel">
+            <span className="state-panel__icon">
+              <ResumeIcon />
+            </span>
+            <div className="state-panel__body">
+              <h3 className="state-panel__title">No resume uploaded yet</h3>
+              <p className="muted">PDF only, up to 5MB.</p>
+              <div className="state-panel__actions">
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => inputRef.current?.click()}
+                  disabled={uploading}
+                >
+                  {uploading ? 'Uploading…' : 'Upload Resume'}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
         <input
           ref={inputRef}
@@ -127,9 +150,12 @@ export default function UploadResume() {
       </div>
 
       {status?.uploaded && (
-        <p className="muted" style={{ marginTop: 16 }}>
+        <p className="muted card--stack">
           We extract skills from your resume automatically — check{' '}
-          <Link to="/student/skills">Skills Status</Link> to see what was found.
+          <Link to="/student/skills" className="text-link">
+            Skills Status
+          </Link>{' '}
+          to see what was found.
         </p>
       )}
     </DashboardLayout>
