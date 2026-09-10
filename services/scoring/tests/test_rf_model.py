@@ -29,7 +29,7 @@ def test_build_features_missing_keys_default_to_zero():
     }
 
 
-def test_predict_readiness_returns_score_in_bounds():
+def test_predict_readiness_returns_all_three_scores_in_bounds():
     features = {
         "claimed_skills": 9,
         "verified": 8,
@@ -37,8 +37,23 @@ def test_predict_readiness_returns_score_in_bounds():
         "unverified": 0,
         "verify_ratio": 0.889,
     }
-    score = predict_readiness(features)
-    assert 0.0 <= score <= 100.0
+    scores = predict_readiness(features)
+    assert set(scores.keys()) == {"linear_regression", "random_forest_tuned", "ensemble"}
+    for value in scores.values():
+        assert 0.0 <= value <= 100.0
+
+
+def test_predict_readiness_ensemble_is_midpoint_of_components():
+    features = {
+        "claimed_skills": 9,
+        "verified": 8,
+        "weakly_verified": 1,
+        "unverified": 0,
+        "verify_ratio": 0.889,
+    }
+    scores = predict_readiness(features)
+    expected_ensemble = round((scores["linear_regression"] + scores["random_forest_tuned"]) / 2, 2)
+    assert abs(scores["ensemble"] - expected_ensemble) < 0.02
 
 
 def test_predict_readiness_high_evidence_scores_higher_than_low_evidence():
@@ -48,4 +63,5 @@ def test_predict_readiness_high_evidence_scores_higher_than_low_evidence():
     low_evidence = predict_readiness(
         {"claimed_skills": 20, "verified": 1, "weakly_verified": 0, "unverified": 19, "verify_ratio": 0.05}
     )
-    assert high_evidence > low_evidence
+    assert high_evidence["linear_regression"] > low_evidence["linear_regression"]
+    assert high_evidence["ensemble"] > low_evidence["ensemble"]

@@ -170,13 +170,16 @@ export async function runValidate(req, res, next) {
 }
 
 /**
- * Admin-only: runs the trained RandomForestRegressor (rf_model.py) against
- * one resume's already-computed semantic_engine readiness report, for
+ * Admin-only: runs the trained models (rf_model.py, DevScore ML Project 3 —
+ * Linear Regression + tuned Random Forest, plus their ensemble) against one
+ * resume's already-computed semantic_engine readiness report, for
  * comparison against the primary rule-based score. Sourced directly from
  * `readiness_reports` (real, live data) — not the skill_verification/
  * code_analysis_summary tables the rest of this controller uses, which
- * don't exist on master (see rf_model.py's own caveats before citing this
- * as a validated result).
+ * don't exist on master (see rf_model.py's own caveats before citing any of
+ * these as a validated result). `predictedScore` (Linear Regression) is the
+ * project's chosen production number; `ensembleScore`/`randomForestScore`
+ * are reported comparison signals, not the headline.
  */
 export async function runPredictTrained(req, res, next) {
   try {
@@ -201,6 +204,8 @@ export async function runPredictTrained(req, res, next) {
       resumeId,
       actualScore: readinessRow.score,
       predictedScore: result.predicted_score,
+      ensembleScore: result.ensemble_score,
+      randomForestScore: result.random_forest_tuned_score,
       features: result.features,
       model: result.model,
     });
