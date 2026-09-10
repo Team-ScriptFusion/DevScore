@@ -36,6 +36,10 @@
   --ds-border: #ececec;
   --ds-border-soft: #f0f0f0;
   --ds-border-strong: #e5e5e5;
+  /* The card-lift hover border and the input hover border. Both were literal
+     hexes repeated across index.css before they were named. */
+  --ds-border-hover: #dddddd;
+  --ds-border-input-hover: #d4d4d4;
 
   /* Status (verification badges) */
   --ds-verified: #16a34a;
@@ -47,6 +51,18 @@
   --ds-missing: #dc2626;
   --ds-missing-bg: #fee2e2;
   --ds-missing-border: #fecaca;
+  --ds-success-soft: #f0fdf4;
+
+  /*
+   * Data layer — score rings, meters, skeletons. `--ds-track` is the unfilled
+   * remainder of any progress indicator and matches the marketing page's ring
+   * (Home.jsx conic-gradient). The ring fill is always brand teal: the band
+   * label carries the semantic colour, so meaning is never colour-only.
+   */
+  --ds-track: #eeeeee;
+  --ds-skeleton: #f1f1f1;
+  --ds-skeleton-sheen: #f8f8f8;
+  --ds-overlay: rgba(10, 10, 10, 0.45);
 
   /* Shape */
   --ds-radius-xs: 8px;
@@ -71,5 +87,12 @@
     BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --ds-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
+  /* Layout rhythm — card grids and table rows across the dashboards. */
+  --ds-grid-gap: 18px;
+  --ds-content-pad: 40px;
+
   --ds-transition: 0.15s ease;
+  --ds-z-drawer: 40;
+  --ds-z-topbar: 20;
+  --ds-z-modal: 60;
 }

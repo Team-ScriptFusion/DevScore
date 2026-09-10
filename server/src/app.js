@@ -8,8 +8,6 @@ import resumeRoutes from './routes/resumeRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import recruiterRoutes from './routes/recruiterRoutes.js';
 import jobRoutes from './routes/jobRoutes.js';
-import skillVerificationRoutes from './routes/skillVerificationRoutes.js';
-import codeAnalysisRoutes from './routes/codeAnalysisRoutes.js';
 import scoringRoutes from './routes/scoringRoutes.js';
 import { notFound, errorHandler } from './middleware/errorHandler.js';
 
@@ -28,8 +26,6 @@ export function createApp() {
   app.use('/api/admin', adminRoutes);
   app.use('/api/recruiter', recruiterRoutes);
   app.use('/api/jobs', jobRoutes);
-  app.use('/api/skill-verification', skillVerificationRoutes);
-  app.use('/api/code-analysis', codeAnalysisRoutes);
   app.use('/api/scoring', scoringRoutes);
 
   app.use(notFound);

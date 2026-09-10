@@ -1,0 +1,15 @@
+# Collected CV dataset — real students' resumes with names, phone numbers and
+# addresses. Consented for the study under the Faculty Ethical Review
+# Clearance, NOT for publication. This repository is public. Never commit them.
+data/
+
+# Cached GitHub API responses, including source files pulled from candidates'
+# repositories. Large, regenerable, and not ours to redistribute.
+.cache/
+
+__pycache__/
+*.pyc
+.env
+.venv/
+venv/
+.pytest_cache/

@@ -1,12 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import DashboardLayout from '../components/DashboardLayout.jsx';
+import PageHeader from '../components/PageHeader.jsx';
 import StatCard from '../components/StatCard.jsx';
-import { InlineLoader } from '../components/Spinner.jsx';
+import EmptyState from '../components/EmptyState.jsx';
+import Modal from '../components/Modal.jsx';
+import { SkeletonRows, SkeletonCards } from '../components/Skeleton.jsx';
+import useReveal from '../hooks/useReveal.js';
+import { useSearch, matches } from '../context/SearchContext.jsx';
 import { jobsApi } from '../lib/api.js';
 import {
   BriefcaseIcon,
   CheckBadgeIcon,
   CandidatesIcon,
+  PlusIcon,
+  InboxIcon,
 } from '../components/DashboardIcons.jsx';
 
 const EMPTY_JOB_FORM = {
@@ -48,6 +55,18 @@ export default function RecruiterJobs() {
   const [jobForm, setJobForm] = useState(EMPTY_JOB_FORM);
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  const query = useSearch('Search postings by title, location or skill…');
+
+  const visible = useMemo(
+    () =>
+      jobs.filter((j) =>
+        matches(query, j.title, j.location, j.description, (j.requiredSkills || []).join(' ')),
+      ),
+    [jobs, query],
+  );
+
+  const statsRef = useReveal([loading], { enabled: !loading });
 
   async function refresh() {
     const { jobs: rows, stats: s } = await jobsApi.listMine();
@@ -132,35 +151,57 @@ export default function RecruiterJobs() {
 
   return (
     <DashboardLayout>
-      <h1 className="page-title">Job Postings</h1>
-      <p className="page-subtitle">
-        Post the roles you&rsquo;re hiring for. Students apply to a specific role, and
-        your dashboard shows you who applied to which.
-      </p>
+      <PageHeader
+        title="Job Postings"
+        subtitle="Post the roles you're hiring for. Students apply to a specific role, and your dashboard shows you who applied to which."
+        actions={
+          <button type="button" className="btn-primary" onClick={openCreate}>
+            <PlusIcon />
+            Post a Job
+          </button>
+        }
+      />
 
-      {!loading && stats && (
-        <div className="stat-grid">
-          <StatCard label="Total Postings" value={stats.total} Icon={BriefcaseIcon} />
-          <StatCard label="Open Roles" value={stats.open} Icon={CheckBadgeIcon} />
-          <StatCard label="Applicants" value={stats.applicants} Icon={CandidatesIcon} />
-        </div>
+      {loading ? (
+        <SkeletonCards n={3} />
+      ) : (
+        stats && (
+          <div className="stat-grid" ref={statsRef}>
+            <StatCard label="Total Postings" value={stats.total} Icon={BriefcaseIcon} />
+            <StatCard label="Open Roles" value={stats.open} Icon={CheckBadgeIcon} />
+            <StatCard label="Applicants" value={stats.applicants} Icon={CandidatesIcon} />
+          </div>
+        )
       )}
 
       <div className="card table-card">
         <div className="table-card__header">
           <h3>Your Postings</h3>
           <button type="button" className="btn-primary table-card__cta" onClick={openCreate}>
-            + Post a Job
+            <PlusIcon />
+            Post a Job
           </button>
         </div>
 
         {loading ? (
-          <InlineLoader className="table-card__empty" />
+          <SkeletonRows cols={6} rows={4} />
         ) : jobs.length === 0 ? (
-          <p className="muted table-card__empty">
-            You haven&rsquo;t posted any roles yet. Candidates apply to a specific role, so
-            post one to start receiving applicants.
-          </p>
+          <EmptyState
+            Icon={BriefcaseIcon}
+            title="No postings yet"
+            description="Candidates apply to a specific role, so post one to start receiving applicants."
+            action={
+              <button type="button" className="btn-primary" onClick={openCreate}>
+                Post your first role
+              </button>
+            }
+          />
+        ) : visible.length === 0 ? (
+          <EmptyState
+            Icon={InboxIcon}
+            title="No matching postings"
+            description="Nothing matches your search. Try a different title, location or skill."
+          />
         ) : (
           <>
             <div className="data-table-wrap">
@@ -177,7 +218,7 @@ export default function RecruiterJobs() {
                   </tr>
                 </thead>
                 <tbody>
-                  {jobs.map((job) => (
+                  {visible.map((job) => (
                     <tr key={job.id}>
                       <td>{job.title}</td>
                       <td>{EMPLOYMENT_LABELS[job.employmentType] || job.employmentType}</td>
@@ -231,25 +272,30 @@ export default function RecruiterJobs() {
               </table>
             </div>
             <p className="muted table-card__footer">
-              Showing {jobs.length} posting{jobs.length === 1 ? '' : 's'}
+              Showing {visible.length} posting{visible.length === 1 ? '' : 's'}
+              {query && ` matching “${query}”`}
             </p>
           </>
         )}
       </div>
 
       {modal && (
-        <div className="modal-backdrop" onClick={closeModal}>
-          <div className="modal card" onClick={(e) => e.stopPropagation()}>
-            <h3>{modal.type === 'edit' ? 'Edit Posting' : 'Post a Job'}</h3>
-            <p className="muted">
-              {modal.type === 'edit'
-                ? 'Changes are visible to students immediately.'
-                : 'Students will see this role and can apply to it right away.'}
-            </p>
+        <Modal
+          title={modal.type === 'edit' ? 'Edit Posting' : 'Post a Job'}
+          description={
+            modal.type === 'edit'
+              ? 'Changes are visible to students immediately.'
+              : 'Students will see this role and can apply to it right away.'
+          }
+          onClose={closeModal}
+        >
+          {formError && (
+            <div className="auth-error" role="alert">
+              {formError}
+            </div>
+          )}
 
-            {formError && <div className="auth-error">{formError}</div>}
-
-            <form className="auth-form" onSubmit={handleSubmit}>
+          <form className="auth-form" onSubmit={handleSubmit}>
               <label className="auth-field">
                 <span>Job title</span>
                 <input
@@ -315,9 +361,8 @@ export default function RecruiterJobs() {
                   {submitting ? 'Saving…' : modal.type === 'edit' ? 'Save Changes' : 'Post Job'}
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
+          </form>
+        </Modal>
       )}
     </DashboardLayout>
   );

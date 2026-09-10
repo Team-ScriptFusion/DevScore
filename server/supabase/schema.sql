@@ -181,98 +181,22 @@ create index if not exists job_applications_job_id_idx on public.job_application
 create index if not exists job_applications_student_id_idx on public.job_applications (student_id);
 
 -- ---------------------------------------------------------------------------
--- github_evidence  — raw per-repo GitHub evidence for a student (Phase 0 of
--- the skill-verification module). Replaced wholesale on each re-fetch
--- (delete + reinsert), same pattern as resume_skills.
+-- readiness_reports  — output of the semantic_engine scoring pipeline
+-- (semantic_engine/service/app.py POST /score-github) for a student's
+-- current resume + linked GitHub account. One row per resume (current state
+-- only, like resumes itself); re-scoring on re-upload overwrites it.
 -- ---------------------------------------------------------------------------
-create table if not exists public.github_evidence (
-  id             uuid primary key default gen_random_uuid(),
-  user_id        uuid not null references public.users (id) on delete cascade,
-  repo_name      text not null,
-  is_fork        boolean not null default false,
-  languages      jsonb not null default '{}'::jsonb,
-  readme_text    text,
-  last_pushed_at timestamptz,
-  fetched_at     timestamptz not null default now()
-);
-create index if not exists github_evidence_user_id_idx on public.github_evidence (user_id);
-
--- ---------------------------------------------------------------------------
--- skill_verification  — per-skill verification result (Phases 1-2), the Vi
--- input to the WVR scoring formula. One row per (user, skill); replaced
--- wholesale on each re-run.
--- ---------------------------------------------------------------------------
-create table if not exists public.skill_verification (
-  id               uuid primary key default gen_random_uuid(),
-  user_id          uuid not null references public.users (id) on delete cascade,
-  skill_id         uuid not null references public.skills (id) on delete cascade,
-  verified         boolean not null,
-  method           text not null check (method in ('direct_match', 'semantic_match', 'unverified')),
-  confidence       numeric check (confidence >= 0 and confidence <= 1),
-  -- on delete set null: github_evidence rows are replaced wholesale on every
-  -- re-fetch (delete + reinsert), so prior-run references must not block that
-  -- delete — the verification row survives with no linked evidence repo.
-  evidence_repo_id uuid references public.github_evidence (id) on delete set null,
-  reason           text check (reason in (
-                     'github_not_connected', 'no_public_repos',
-                     'below_confidence_threshold'
-                   )),
-  computed_at      timestamptz not null default now(),
-  unique (user_id, skill_id)
-);
-create index if not exists skill_verification_user_id_idx on public.skill_verification (user_id);
-
--- Idempotent upgrade path for databases created before evidence_repo_id got
--- its on-delete behaviour: without it, GithubEvidence.replaceForUser's delete
--- raises a foreign-key violation on every re-verification after the first.
-alter table public.skill_verification drop constraint if exists skill_verification_evidence_repo_id_fkey;
-alter table public.skill_verification add constraint skill_verification_evidence_repo_id_fkey
-  foreign key (evidence_repo_id) references public.github_evidence (id) on delete set null;
-
--- ---------------------------------------------------------------------------
--- code_analysis  — per-repo structural complexity metrics (AST-based code
--- analysis module). Replaced wholesale on each re-run (delete + reinsert),
--- same pattern as github_evidence/skill_verification.
--- ---------------------------------------------------------------------------
-create table if not exists public.code_analysis (
-  id                        uuid primary key default gen_random_uuid(),
-  user_id                   uuid not null references public.users (id) on delete cascade,
-  repo_name                 text not null,
-  language                  text,
-  avg_cyclomatic_complexity numeric,
-  total_functions           int,
-  total_lines               int,
-  max_nesting_depth         int,
-  included                  boolean not null default true,
-  excluded_reason           text check (excluded_reason in (
-                              'fork', 'empty', 'too_large', 'tutorial_clone_heuristic',
-                              'fetch_failed'
-                            )),
-  analyzed_at               timestamptz not null default now()
-);
-create index if not exists code_analysis_user_id_idx on public.code_analysis (user_id);
-
--- Idempotent upgrade path for databases created before 'fetch_failed' existed:
--- one repo failing to fetch (404/403/5xx from GitHub, corrupt tarball) is
--- recorded as an excluded repo rather than failing the whole student's run,
--- so the value must be accepted by already-created tables too.
-alter table public.code_analysis drop constraint if exists code_analysis_excluded_reason_check;
-alter table public.code_analysis add constraint code_analysis_excluded_reason_check
-  check (excluded_reason in (
-    'fork', 'empty', 'too_large', 'tutorial_clone_heuristic', 'fetch_failed'
-  ));
-
--- ---------------------------------------------------------------------------
--- code_analysis_summary  — per-student rollup, computed once by the
--- code-analysis service's aggregation step and stored as-is. One row per
--- user; replaced wholesale on each re-run.
--- ---------------------------------------------------------------------------
-create table if not exists public.code_analysis_summary (
-  user_id                uuid primary key references public.users (id) on delete cascade,
-  avg_complexity_overall numeric,
-  total_loc_overall      int,
-  qualifying_repo_count  int not null default 0,
-  computed_at            timestamptz not null default now()
+create table if not exists public.readiness_reports (
+  id           uuid primary key default gen_random_uuid(),
+  resume_id    uuid not null unique references public.resumes (id) on delete cascade,
+  status       text not null default 'pending'
+                 check (status in ('pending', 'success', 'failed')),
+  score        numeric,
+  band         text,
+  report       jsonb,
+  error        text,
+  requested_at timestamptz not null default now(),
+  completed_at timestamptz
 );
 
 -- ---------------------------------------------------------------------------
@@ -353,10 +277,7 @@ alter table public.skills enable row level security;
 alter table public.resume_skills enable row level security;
 alter table public.job_roles enable row level security;
 alter table public.job_applications enable row level security;
-alter table public.github_evidence enable row level security;
-alter table public.skill_verification enable row level security;
-alter table public.code_analysis enable row level security;
-alter table public.code_analysis_summary enable row level security;
+alter table public.readiness_reports enable row level security;
 alter table public.expert_scores enable row level security;
 alter table public.train_test_split enable row level security;
 alter table public.skill_weights enable row level security;

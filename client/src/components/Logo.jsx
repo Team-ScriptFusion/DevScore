@@ -1,27 +1,19 @@
 /**
- * DevScore brand mark — the rounded-square checkmark tile + wordmark, matching
- * the marketing site. The fill tracks --ds-primary so a retheme stays one line.
+ * DevScore brand mark — the teal "D + check" logo glyph plus the wordmark,
+ * matching the marketing site. The artwork lives in /public/brand and reads
+ * cleanly on both the light auth panels and the dark sidebar.
  */
 export default function Logo({ size = 28, showText = true, subtitle }) {
   return (
     <span className="sidebar__brand" style={{ padding: 0 }}>
-      <svg
+      <img
+        src="/brand/devscore-mark.png"
         width={size}
         height={size}
-        viewBox="0 0 32 32"
-        fill="none"
+        alt=""
         aria-hidden="true"
-      >
-        <rect x="2" y="2" width="28" height="28" rx="8" fill="var(--ds-primary)" />
-        <path
-          d="M10 16.5l4 4 8-9"
-          stroke="#fff"
-          strokeWidth="2.6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          fill="none"
-        />
-      </svg>
+        style={{ display: 'block', flexShrink: 0 }}
+      />
       {showText && (
         <span className="sidebar__brand-text">
           <span className="sidebar__brand-name">DevScore</span>

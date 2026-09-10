@@ -42,6 +42,40 @@ a {
   margin: 0;
 }
 
+/* Visually hidden until focused — first stop in the tab order on every screen. */
+.skip-link {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 200;
+  padding: 10px 16px;
+  border-radius: var(--ds-radius-sm);
+  background: var(--ds-primary);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: var(--ds-shadow-lg);
+  transform: translateY(-200%);
+  transition: transform var(--ds-transition);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+/* Paired with an aria-hidden visual, so a load isn't silent for screen readers. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ---- App shell (sidebar + content) ---- */
 .app-shell {
   display: flex;
@@ -57,8 +91,13 @@ a {
 }
 
 .app-content {
-  padding: 32px 40px 56px;
+  padding: 32px var(--ds-content-pad) 64px;
   flex: 1;
+}
+
+/* the shell focuses <main> after a skip-link jump; never draw a ring for it */
+.app-content:focus {
+  outline: none;
 }
 
 /* ---- Sidebar ---- */
@@ -75,12 +114,41 @@ a {
   height: 100vh;
 }
 
+.sidebar__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* a drawer control only — hidden until the sidebar becomes off-canvas */
+.sidebar__dismiss {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--ds-radius-sm);
+  background: none;
+  color: var(--ds-sidebar-muted);
+  cursor: pointer;
+  transition: background-color var(--ds-transition), color var(--ds-transition);
+}
+
+.sidebar__dismiss:hover {
+  background: var(--ds-sidebar-active);
+  color: #fff;
+}
+
 /* Logo.jsx forces an inline padding:0 here, so spacing must come from margin. */
 .sidebar__brand {
   display: flex;
   align-items: center;
   gap: 10px;
   margin: 4px 6px 18px;
+  min-width: 0;
 }
 
 .sidebar__brand-text {
@@ -119,15 +187,38 @@ a {
 .sidebar__nav {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 18px;
   flex: 1;
   border-top: 1px solid var(--ds-sidebar-border);
   border-bottom: 1px solid var(--ds-sidebar-border);
   padding: 16px 0;
   margin-bottom: 14px;
+  overflow-y: auto;
 }
 
+.sidebar__section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar__section-label {
+  padding: 0 12px;
+  margin-bottom: 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ds-sidebar-muted);
+  opacity: 0.75;
+}
+
+/*
+ * The 3px inset rail is what marks the active item; the background tint alone
+ * was too close to hover to distinguish position from pointer feedback.
+ */
 .sidebar__link {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 11px;
@@ -149,6 +240,13 @@ a {
   flex-shrink: 0;
 }
 
+.sidebar__link-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sidebar__link:hover {
   background: var(--ds-sidebar-active);
   color: #fff;
@@ -157,10 +255,46 @@ a {
 .sidebar__link.is-active {
   background: var(--ds-sidebar-active);
   color: #fff;
+  font-weight: 600;
+}
+
+.sidebar__link.is-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--ds-sidebar-accent);
 }
 
 .sidebar__link.is-active svg {
   color: var(--ds-sidebar-accent);
+}
+
+/* Not-yet-built screens. Explicitly labelled rather than just dimmed, so an
+   inert row reads as "coming later" instead of "broken link". */
+.sidebar__link--disabled {
+  color: #6b6b6b;
+  cursor: not-allowed;
+}
+
+.sidebar__link--disabled:hover {
+  background: none;
+  color: #6b6b6b;
+}
+
+.sidebar__soon {
+  margin-left: auto;
+  padding: 2px 7px;
+  border-radius: var(--ds-radius-pill);
+  border: 1px solid var(--ds-sidebar-border);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ds-sidebar-muted);
 }
 
 .sidebar__logout {
@@ -191,19 +325,90 @@ a {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 40px;
+  padding: 14px var(--ds-content-pad);
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--ds-border);
   position: sticky;
   top: 0;
-  z-index: 20;
+  z-index: var(--ds-z-topbar);
+}
+
+.topbar__lead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* drawer trigger — only rendered as a control below the sidebar breakpoint */
+.topbar__menu {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-sm);
+  background: var(--ds-surface);
+  color: var(--ds-text);
+  cursor: pointer;
+  transition: border-color var(--ds-transition), background-color var(--ds-transition);
+}
+
+.topbar__menu:hover {
+  border-color: var(--ds-border-input-hover);
+  background: var(--ds-bg);
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.breadcrumb__root {
+  color: var(--ds-text-subtle);
+}
+
+.breadcrumb__sep {
+  color: var(--ds-text-faint);
+}
+
+.breadcrumb__current {
+  font-weight: 600;
+  color: var(--ds-heading);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/*
+ * The search box is rendered only once a page claims it (see SearchContext),
+ * so this wrapper never appears empty.
+ */
+.topbar__search-wrap {
+  position: relative;
+  flex: 1;
+  max-width: 380px;
+  display: flex;
+  align-items: center;
+}
+
+.topbar__search-icon {
+  position: absolute;
+  left: 12px;
+  display: inline-flex;
+  color: var(--ds-text-faint);
+  pointer-events: none;
 }
 
 .topbar__search {
-  flex: 1;
-  max-width: 380px;
-  padding: 9px 14px;
+  width: 100%;
+  padding: 9px 36px 9px 38px;
   border: 1px solid var(--ds-border);
   border-radius: var(--ds-radius-sm);
   font-family: var(--ds-font);
@@ -211,6 +416,11 @@ a {
   background: var(--ds-bg);
   color: var(--ds-text);
   transition: border-color var(--ds-transition), box-shadow var(--ds-transition);
+}
+
+/* the type=search clear affordance is drawn by .topbar__search-clear instead */
+.topbar__search::-webkit-search-cancel-button {
+  appearance: none;
 }
 
 .topbar__search::placeholder {
@@ -222,6 +432,27 @@ a {
   background: var(--ds-surface);
   border-color: var(--ds-primary);
   box-shadow: var(--ds-focus-ring);
+}
+
+.topbar__search-clear {
+  position: absolute;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--ds-text-subtle);
+  cursor: pointer;
+  transition: background-color var(--ds-transition), color var(--ds-transition);
+}
+
+.topbar__search-clear:hover {
+  background: var(--ds-border-soft);
+  color: var(--ds-heading);
 }
 
 .topbar__user {
@@ -286,6 +517,37 @@ a {
   padding: 24px;
 }
 
+/* ---- Page header (title + subtitle + actions) ---- */
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 28px;
+}
+
+.page-header__text {
+  min-width: 0;
+}
+
+.page-header__eyebrow {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ds-primary);
+}
+
+.page-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
 .page-title {
   font-family: var(--ds-font-display);
   font-size: 28px;
@@ -298,10 +560,15 @@ a {
 
 .page-subtitle {
   color: var(--ds-text-muted);
-  margin: 0 0 28px;
+  margin: 0;
   font-size: 15px;
   line-height: 1.6;
   max-width: 640px;
+}
+
+/* standalone use, outside .page-header, still needs its own bottom rhythm */
+.page-subtitle:last-child {
+  margin-bottom: 0;
 }
 
 .placeholder {
@@ -325,7 +592,7 @@ a {
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 18px;
+  gap: var(--ds-grid-gap);
   margin-bottom: 28px;
 }
 
@@ -342,7 +609,11 @@ a {
 .stat-card:hover {
   transform: translateY(-3px);
   box-shadow: var(--ds-shadow-hover);
-  border-color: #dddddd;
+  border-color: var(--ds-border-hover);
+}
+
+.stat-card__body {
+  min-width: 0;
 }
 
 .stat-card__label {
@@ -362,6 +633,22 @@ a {
   letter-spacing: -0.04em;
   line-height: 1;
   color: var(--ds-heading);
+}
+
+/* "/100" beside an average — subordinate to the figure, not part of it */
+.stat-card__suffix {
+  margin-left: 3px;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ds-text-faint);
+}
+
+.stat-card__sublabel {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ds-text-subtle);
 }
 
 .stat-card__icon {
@@ -400,9 +687,7 @@ a {
   color: var(--ds-heading);
 }
 
-/* .btn-primary is width:100% and declared later, so this needs two classes */
-.btn-primary.table-card__cta {
-  width: auto;
+.table-card__cta {
   flex-shrink: 0;
   padding: 9px 16px;
   font-size: 14px;
@@ -420,17 +705,28 @@ a {
   font-size: 13px;
 }
 
+/*
+ * The horizontal scroller lives here, not on the page — a wide candidate table
+ * must never make the whole document scroll sideways on a phone. `max-height`
+ * plus a sticky <thead> keeps the column labels in view on long lists.
+ */
 .data-table-wrap {
   overflow-x: auto;
+  overflow-y: auto;
+  max-height: 620px;
 }
 
 .data-table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 14px;
 }
 
 .data-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   background: var(--ds-bg);
   color: var(--ds-text-faint);
   font-size: 11px;
@@ -441,6 +737,32 @@ a {
   padding: 12px 18px;
   white-space: nowrap;
   border-bottom: 1px solid var(--ds-border-soft);
+}
+
+/* Sortable column headers. The whole cell is the target, so the hit area
+   matches what looks clickable. */
+.data-table__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+  transition: color var(--ds-transition);
+}
+
+.data-table__sort:hover {
+  color: var(--ds-text-muted);
+}
+
+.data-table th[aria-sort='ascending'] .data-table__sort,
+.data-table th[aria-sort='descending'] .data-table__sort {
+  color: var(--ds-primary);
 }
 
 .data-table td {
@@ -476,6 +798,13 @@ a {
   color: var(--ds-heading);
 }
 
+.data-table__sub {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ds-text-subtle);
+}
+
 .data-table__actions {
   text-align: right;
   white-space: nowrap;
@@ -486,11 +815,50 @@ a {
 }
 
 .data-table__actions .btn-secondary {
-  width: auto;
   padding: 8px 16px;
   font-size: 13px;
   white-space: nowrap;
 }
+
+/* Whole-row navigation. The row is a pointer target for the mouse; the
+   explicit link inside it stays the keyboard and screen-reader path. */
+.data-table tbody tr.is-clickable {
+  cursor: pointer;
+}
+
+/* readiness column — small ring paired with the figure, so the score is never
+   communicated by colour alone */
+.data-table__score {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.data-table__score-value {
+  font-family: var(--ds-font-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--ds-heading);
+  line-height: 1.1;
+}
+
+.data-table__score-band {
+  display: block;
+  font-family: var(--ds-font);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--ds-text-subtle);
+}
+
+/* deterministic avatar tints, picked by name hash so a person keeps one colour */
+.avatar--tint-0 { background: #0d9488; }
+.avatar--tint-1 { background: #0f766e; }
+.avatar--tint-2 { background: #334155; }
+.avatar--tint-3 { background: #6d28d9; }
+.avatar--tint-4 { background: #b45309; }
+.avatar--tint-5 { background: #0369a1; }
 
 /* ---- Buttons ---- */
 .btn-primary,
@@ -514,9 +882,17 @@ a {
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
-  width: 100%;
   line-height: 1.2;
   box-shadow: var(--ds-shadow-primary);
+}
+
+/*
+ * Buttons hug their label by default. This used to be `width: 100%` — written
+ * form-first — which meant every one of the dozen non-form usages had to undo
+ * it, in CSS or inline. Form submits opt into full width instead.
+ */
+.btn-block {
+  width: 100%;
 }
 
 .btn-primary:hover {
@@ -550,7 +926,7 @@ a {
 .btn-google:hover,
 .btn-github:hover {
   background: var(--ds-bg);
-  border-color: #d4d4d4;
+  border-color: var(--ds-border-input-hover);
   box-shadow: none;
 }
 
@@ -572,7 +948,7 @@ a {
 
 .btn-secondary:hover {
   background: var(--ds-bg);
-  border-color: #d4d4d4;
+  border-color: var(--ds-border-input-hover);
 }
 
 .btn-primary:focus-visible,
@@ -708,7 +1084,7 @@ a {
 }
 
 .setup-banner--done {
-  background: #f0fdf4;
+  background: var(--ds-success-soft);
   border-color: var(--ds-verified-border);
 }
 
@@ -733,7 +1109,7 @@ a {
 .setup-card:hover {
   transform: translateY(-3px);
   box-shadow: var(--ds-shadow-hover);
-  border-color: #dddddd;
+  border-color: var(--ds-border-hover);
 }
 
 .setup-card.is-done {
@@ -809,7 +1185,6 @@ a {
 
 .setup-card .btn-primary,
 .setup-card .btn-secondary {
-  width: auto;
   align-self: flex-start;
   margin-top: auto;
 }
@@ -832,7 +1207,7 @@ a {
 .job-card:hover {
   transform: translateY(-3px);
   box-shadow: var(--ds-shadow-hover);
-  border-color: #dddddd;
+  border-color: var(--ds-border-hover);
 }
 
 .job-card.is-applied {
@@ -901,11 +1276,9 @@ a {
   margin-top: auto;
 }
 
-/* .btn-primary is width:100% globally — job CTAs hug their label instead */
 .job-card__footer .btn-primary,
 .job-card__footer .btn-secondary,
-.btn-primary.job-card__cta {
-  width: auto;
+.job-card__cta {
   padding: 9px 18px;
   font-size: 14px;
 }
@@ -976,9 +1349,6 @@ a {
   margin-right: auto;
 }
 
-.btn-secondary.applied-list__cta {
-  width: auto;
-}
 
 /* ---- Candidate profile header ---- */
 .profile-header {
@@ -987,16 +1357,36 @@ a {
   gap: 18px;
 }
 
+.profile-header__name {
+  margin-bottom: 2px;
+}
+
+.auth-back--stack {
+  margin-bottom: 16px;
+}
+
+.alert--stack {
+  margin-bottom: 16px;
+}
+
+.applied-list--flush {
+  margin-bottom: 0;
+}
+
+.setup-grid--stack {
+  margin-top: 20px;
+}
+
 /* ---- Modal (Add Recruiter, etc.) ---- */
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(10, 10, 10, 0.45);
+  background: var(--ds-overlay);
   backdrop-filter: blur(3px);
   display: grid;
   place-items: center;
   padding: 24px;
-  z-index: 100;
+  z-index: var(--ds-z-modal);
 }
 
 /* after .card so the larger radius and padding win */
@@ -1031,7 +1421,6 @@ a {
 
 .modal__footer .btn-primary,
 .modal__footer .btn-secondary {
-  width: auto;
   padding: 11px 20px;
 }
 
@@ -1075,7 +1464,6 @@ a {
 }
 
 .credential-box .btn-secondary {
-  width: auto;
   align-self: flex-start;
   padding: 8px 16px;
   font-size: 13px;
@@ -1425,7 +1813,7 @@ a {
 .auth-field input:hover,
 .auth-field textarea:hover,
 .auth-field select:hover {
-  border-color: #d4d4d4;
+  border-color: var(--ds-border-input-hover);
 }
 
 .auth-field input:focus,
@@ -1570,7 +1958,862 @@ a {
   font-weight: 600;
 }
 
+.not-found {
+  text-align: center;
+  max-width: 420px;
+}
+
+.not-found__code {
+  margin: 0 0 8px;
+  font-family: var(--ds-font-display);
+  font-size: 56px;
+  font-weight: 700;
+  letter-spacing: -0.045em;
+  line-height: 1;
+  color: var(--ds-primary);
+}
+
+.not-found__title {
+  font-size: 24px;
+  letter-spacing: -0.035em;
+  color: var(--ds-heading);
+  margin: 0 0 8px;
+}
+
+.not-found__cta {
+  margin-top: 24px;
+}
+
+/* ---- Empty states ---- */
+/*
+ * Every "nothing here yet" branch used to be a bare <p class="muted">, which
+ * reads as a rendering failure rather than a state. Icon + heading + next step.
+ */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  padding: 48px 24px;
+}
+
+.empty-state--compact {
+  padding: 28px 20px;
+}
+
+.empty-state__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  margin-bottom: 8px;
+  border-radius: 12px;
+  background: var(--ds-primary-soft);
+  color: var(--ds-primary);
+}
+
+.empty-state__title {
+  margin: 0;
+  font-family: var(--ds-font-display);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ds-heading);
+}
+
+.empty-state__body {
+  margin: 0;
+  max-width: 420px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--ds-text-muted);
+}
+
+.empty-state__action {
+  margin-top: 14px;
+}
+
+/* ---- Skeletons ---- */
+.skeleton {
+  display: block;
+  border-radius: var(--ds-radius-pill);
+  background: linear-gradient(
+    90deg,
+    var(--ds-skeleton) 0%,
+    var(--ds-skeleton-sheen) 50%,
+    var(--ds-skeleton) 100%
+  );
+  background-size: 200% 100%;
+  animation: ds-sheen 1.4s ease-in-out infinite;
+}
+
+.skeleton--bar {
+  height: 12px;
+}
+
+.skeleton--label {
+  width: 84px;
+  height: 10px;
+  margin-bottom: 14px;
+}
+
+.skeleton--value {
+  width: 56px;
+  height: 26px;
+  border-radius: var(--ds-radius-xs);
+}
+
+.skeleton--tile {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+
+@keyframes ds-sheen {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.skeleton-table {
+  display: flex;
+  flex-direction: column;
+}
+
+.skeleton-table__row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 0 18px;
+  height: 52px;
+  border-top: 1px solid var(--ds-border-soft);
+}
+
+.skeleton-table__row:first-child {
+  border-top: none;
+}
+
+.skeleton-table__row .skeleton {
+  flex: 1;
+}
+
+/* motion is decoration here; the bars still reserve the space without it */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+    background: var(--ds-skeleton);
+  }
+}
+
+/* ---- Score ring ---- */
+/*
+ * A conic-gradient donut, matching the marketing hero. The fill is always brand
+ * teal — the band label beside it carries the semantic reading, so a low score
+ * never turns the UI into an alarm and meaning is never colour-only.
+ */
+.score-ring {
+  position: relative;
+  width: var(--ring-size);
+  height: var(--ring-size);
+  flex-shrink: 0;
+}
+
+.score-ring__track {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--ds-track);
+}
+
+.score-ring--empty .score-ring__track {
+  background: none;
+  border: 2px dashed var(--ds-border-strong);
+}
+
+/* the hole is an inset disc, not a mask — keeps it one paint and no SVG */
+.score-ring__hole {
+  position: absolute;
+  inset: var(--ring-stroke);
+  border-radius: 50%;
+  background: var(--ds-surface);
+  display: grid;
+  place-items: center;
+}
+
+.score-ring__value {
+  font-family: var(--ds-font-display);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--ds-heading);
+}
+
+.score-ring__suffix {
+  font-size: 0.42em;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ds-text-faint);
+}
+
+.score-ring__placeholder {
+  font-family: var(--ds-font-display);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ds-text-faint);
+}
+
+/* on a tinted card the hole has to match its surface, not the default white */
+.readiness-hero--muted .score-ring__hole {
+  background: var(--ds-bg);
+}
+
+/* ---- Meters ---- */
+.meter {
+  width: 100%;
+}
+
+.meter__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.meter__label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ds-text-muted);
+}
+
+.meter__value {
+  font-family: var(--ds-font-display);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ds-heading);
+}
+
+.meter__track {
+  height: 8px;
+  border-radius: var(--ds-radius-pill);
+  background: var(--ds-track);
+  overflow: hidden;
+}
+
+.meter--sm .meter__track {
+  height: 6px;
+}
+
+.meter__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--ds-radius-pill);
+  transition: width 0.4s ease;
+}
+
+.meter__fill--primary {
+  background: var(--ds-primary);
+}
+
+.meter__fill--verified {
+  background: var(--ds-verified);
+}
+
+.meter__fill--pending {
+  background: var(--ds-pending);
+}
+
+.meter__fill--neutral {
+  background: var(--ds-text-faint);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .meter__fill {
+    transition: none;
+  }
+}
+
+/* ---- Stacked composition meter (admin) ---- */
+.stacked-meter__track {
+  display: flex;
+  height: 12px;
+  border-radius: var(--ds-radius-pill);
+  background: var(--ds-track);
+  overflow: hidden;
+}
+
+.stacked-meter__seg {
+  display: block;
+  height: 100%;
+}
+
+.stacked-meter__seg--primary,
+.stacked-meter__dot--primary {
+  background: var(--ds-primary);
+}
+
+.stacked-meter__seg--accent,
+.stacked-meter__dot--accent {
+  background: var(--ds-primary-bright);
+}
+
+.stacked-meter__seg--neutral,
+.stacked-meter__dot--neutral {
+  background: #334155;
+}
+
+.stacked-meter__legend {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 26px;
+}
+
+.stacked-meter__legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.stacked-meter__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.stacked-meter__legend-label {
+  color: var(--ds-text-muted);
+}
+
+.stacked-meter__legend-value {
+  font-family: var(--ds-font-display);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ds-heading);
+}
+
+.stacked-meter__legend-pct {
+  font-family: var(--ds-font);
+  font-weight: 500;
+  color: var(--ds-text-faint);
+}
+
+/* ---- Readiness hero (student dashboard) ---- */
+.readiness-hero {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  margin-bottom: 28px;
+}
+
+.readiness-hero__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.readiness-hero__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.readiness-hero__title {
+  margin: 0;
+  font-family: var(--ds-font-display);
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: var(--ds-heading);
+}
+
+.readiness-hero__band {
+  margin: 0 0 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ds-text-muted);
+}
+
+.readiness-hero__band strong {
+  color: var(--ds-heading);
+  font-weight: 600;
+}
+
+.readiness-hero__meter {
+  max-width: 340px;
+}
+
+.readiness-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+/* ---- Readiness report (SkillsStatus + CandidateProfile) ---- */
+.readiness__summary {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding-bottom: 22px;
+  margin-bottom: 22px;
+  border-bottom: 1px solid var(--ds-border-soft);
+}
+
+/* no rule below the summary when there's nothing under it to separate */
+.readiness__summary--empty {
+  padding-bottom: 0;
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
+.readiness__summary--empty .muted {
+  margin: 0;
+  max-width: 460px;
+}
+
+.readiness__band {
+  margin: 0 0 4px;
+  font-family: var(--ds-font-display);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: var(--ds-heading);
+}
+
+.readiness__confidence {
+  max-width: 260px;
+  margin-top: 12px;
+}
+
+.readiness__section {
+  margin-bottom: 22px;
+}
+
+.readiness__section:last-child {
+  margin-bottom: 0;
+}
+
+.readiness__section-title {
+  margin: 0 0 12px;
+  font-family: var(--ds-font-display);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ds-text-faint);
+}
+
+.readiness__categories {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 460px;
+}
+
+.readiness__gap-group {
+  margin-bottom: 14px;
+}
+
+.readiness__gap-group:last-child {
+  margin-bottom: 0;
+}
+
+.readiness__warnings {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ds-text-muted);
+}
+
+/* Raw scoring internals — available, but not competing with the score itself. */
+.readiness__details {
+  margin-top: 20px;
+  border-top: 1px solid var(--ds-border-soft);
+  padding-top: 16px;
+}
+
+.readiness__details summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ds-text-muted);
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.readiness__details summary::-webkit-details-marker {
+  display: none;
+}
+
+.readiness__details summary::before {
+  content: '';
+  width: 0;
+  height: 0;
+  border-left: 5px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform var(--ds-transition);
+}
+
+.readiness__details[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.readiness__details summary:hover {
+  color: var(--ds-primary);
+}
+
+.readiness__breakdown {
+  margin: 12px 0 0;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--ds-text-muted);
+}
+
+/* ---- GitHub evidence list ---- */
+.evidence__authorship {
+  max-width: 460px;
+}
+
+.evidence__disputed {
+  margin: 8px 0 0;
+}
+
+.evidence-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.evidence-item {
+  padding: 14px 0;
+  border-top: 1px solid var(--ds-border-soft);
+}
+
+.evidence-item:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.evidence-item:last-child {
+  padding-bottom: 0;
+}
+
+.evidence-item__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.evidence-item__skill {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--ds-heading);
+}
+
+/* repo names as monospace tags — they're identifiers, not prose */
+.evidence-item__repos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 8px;
+}
+
+.evidence-item__repo {
+  padding: 2px 9px;
+  border-radius: var(--ds-radius-pill);
+  background: var(--ds-bg);
+  border: 1px solid var(--ds-border-strong);
+  font-family: var(--ds-font-mono);
+  font-size: 11.5px;
+  color: var(--ds-text-muted);
+}
+
+.evidence-item__explanation {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ds-text-muted);
+}
+
+/* ---- Stepper (student setup checklist) ---- */
+.setup-card__step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--ds-bg);
+  border: 1px solid var(--ds-border-strong);
+  color: var(--ds-text-subtle);
+  font-family: var(--ds-font-display);
+  font-size: 11.5px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.setup-card.is-done .setup-card__step {
+  background: var(--ds-verified);
+  border-color: var(--ds-verified);
+  color: #fff;
+}
+
+/* the one step the student should do next gets the only teal frame in the row */
+.setup-card.is-next {
+  border-color: var(--ds-primary-border);
+  box-shadow: var(--ds-focus-ring);
+}
+
+/* declared after .setup-card:hover, so restate the lift or this card loses it */
+.setup-card.is-next:hover {
+  box-shadow: var(--ds-focus-ring), var(--ds-shadow-hover);
+  border-color: var(--ds-primary);
+}
+
+.setup-card.is-next .setup-card__step {
+  background: var(--ds-primary);
+  border-color: var(--ds-primary);
+  color: #fff;
+}
+
+.setup-card__title-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 8px;
+}
+
+.setup-card__title-row h3 {
+  margin: 0;
+}
+
+.setup-banner__icon svg {
+  display: block;
+}
+
+/* ---- State panel (resume / GitHub connection status) ---- */
+/*
+ * One shape for "done / locked / not started" on the single-purpose setup
+ * screens. These were loose <p> + button stacks with no visual anchor, so the
+ * three states looked like three different pages.
+ */
+.card--narrow {
+  max-width: 520px;
+}
+
+.state-panel {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+}
+
+.state-panel__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  background: var(--ds-primary-soft);
+  color: var(--ds-primary);
+}
+
+.state-panel__icon--done {
+  background: var(--ds-verified-bg);
+  color: var(--ds-verified);
+}
+
+.state-panel__icon--locked {
+  background: var(--ds-bg);
+  color: var(--ds-text-faint);
+}
+
+.state-panel__body {
+  min-width: 0;
+  flex: 1;
+}
+
+.state-panel__title {
+  margin: 10px 0 6px;
+  font-family: var(--ds-font-display);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ds-heading);
+  word-break: break-word;
+}
+
+/* no badge above it — the title is then the first thing in the block */
+.state-panel__body > .state-panel__title:first-child {
+  margin-top: 0;
+}
+
+.state-panel__body .muted {
+  margin: 0;
+}
+
+.state-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+/* inline prose links — .card a inherits body colour, so these need naming */
+.text-link {
+  color: var(--ds-primary);
+  font-weight: 600;
+}
+
+.text-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ---- Section heading (used above card groups) ---- */
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 32px 0 16px;
+}
+
+.section-head h2 {
+  margin: 0;
+  font-family: var(--ds-font-display);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: var(--ds-heading);
+}
+
+.section-head__meta {
+  font-size: 13px;
+  color: var(--ds-text-subtle);
+}
+
+/* ---- Card header (non-table cards) ---- */
+.card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.card-head h3 {
+  margin: 0 0 4px;
+  font-family: var(--ds-font-display);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ds-heading);
+}
+
+.card-head p {
+  margin: 0;
+}
+
+.card--stack {
+  margin-top: 20px;
+}
+
+/* ---- Modal header ---- */
+.modal__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.modal__header h3 {
+  margin: 0;
+}
+
+.modal__description {
+  margin: 6px 0 0;
+}
+
+/* the modal's own .muted reset zeroes this out; the header owns its spacing */
+.modal .modal__description {
+  margin: 6px 0 0;
+}
+
+.modal__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--ds-radius-sm);
+  background: none;
+  color: var(--ds-text-subtle);
+  cursor: pointer;
+  transition: background-color var(--ds-transition), color var(--ds-transition);
+}
+
+.modal__close:hover {
+  background: var(--ds-bg);
+  color: var(--ds-heading);
+}
+
+/* ---- Focus visibility ----
+ * Only the two button classes carried a focus ring before, which left the
+ * sidebar, table actions, filter chips and modal controls invisible to keyboard
+ * users. One rule per surface, using the shared ring token.
+ */
+.btn-link:focus-visible,
+.job-filter__chip:focus-visible,
+.data-table__sort:focus-visible,
+.topbar__menu:focus-visible,
+.topbar__search-clear:focus-visible,
+.modal__close:focus-visible,
+.sidebar__dismiss:focus-visible,
+.applied-list__item:focus-visible,
+.radio-option:focus-within,
+.readiness__details summary:focus-visible {
+  outline: 2px solid var(--ds-primary);
+  outline-offset: 2px;
+  border-radius: var(--ds-radius-xs);
+}
+
+/* on the near-black sidebar the teal ring reads better than the outline pair */
+.sidebar__link:focus-visible,
+.sidebar__logout:focus-visible {
+  outline: 2px solid var(--ds-sidebar-accent);
+  outline-offset: -2px;
+}
+
 /* ---- Responsive ---- */
+@media (max-width: 1100px) {
+  :root {
+    --ds-content-pad: 28px;
+  }
+}
+
 @media (max-width: 900px) {
   .auth-layout {
     grid-template-columns: 1fr;
@@ -1588,39 +2831,93 @@ a {
   .auth-panel h1 {
     font-size: 26px;
   }
-}
-
-@media (max-width: 768px) {
-  .sidebar {
-    width: 76px;
-    padding: 20px 10px;
-  }
-  /* scoped to .sidebar — the auth panel reuses these same brand classes */
-  .sidebar .sidebar__brand-text,
-  .sidebar .sidebar__link span,
-  .sidebar .sidebar__logout span {
+  .breadcrumb__root,
+  .breadcrumb__sep {
     display: none;
   }
-  .sidebar .sidebar__brand {
-    justify-content: center;
-    margin: 4px 0 16px;
+  .readiness-hero,
+  .readiness__summary {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 20px;
   }
-  .sidebar__link,
-  .sidebar__logout {
-    justify-content: center;
-    padding: 11px 0;
+}
+
+/*
+ * Below this width the sidebar becomes an off-canvas drawer. It previously
+ * squeezed to a 76px icon rail, which cost a fifth of a 375px screen and left
+ * every destination unlabelled.
+ */
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: var(--ds-z-drawer);
+    width: 264px;
+    height: 100dvh;
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    box-shadow: var(--ds-shadow-lg);
+  }
+  .sidebar.is-open {
+    transform: translateX(0);
+  }
+  .sidebar__dismiss {
+    display: inline-flex;
+  }
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--ds-z-drawer) - 1);
+    background: var(--ds-overlay);
+  }
+  .topbar__menu {
+    display: inline-flex;
   }
   .app-content {
-    padding: 20px 16px 40px;
+    padding: 20px 16px 48px;
   }
   .topbar {
     padding: 12px 16px;
+    gap: 10px;
   }
-  .topbar__search {
+  .topbar__search-wrap {
     max-width: none;
   }
   .topbar__user-meta {
     display: none;
+  }
+  .page-header {
+    margin-bottom: 22px;
+  }
+  .page-title {
+    font-size: 24px;
+  }
+  .data-table-wrap {
+    max-height: none;
+  }
+  /* a sticky header inside a short scroller just eats rows on a phone */
+  .data-table th {
+    position: static;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .readiness-hero__actions .btn-primary,
+  .readiness-hero__actions .btn-secondary {
+    width: 100%;
+  }
+  .stacked-meter__legend {
+    flex-direction: column;
+    gap: 10px;
   }
 }
 
@@ -1628,5 +2925,11 @@ a {
   .auth-form__row,
   .auth-providers {
     grid-template-columns: 1fr;
+  }
+  .page-header__actions {
+    width: 100%;
+  }
+  .page-header__actions > * {
+    flex: 1;
   }
 }
