@@ -4,6 +4,10 @@
 # web apps already provisioned (deploy/azure/provision.sh). Each app has
 # SCM_DO_BUILD_DURING_DEPLOYMENT=true, so Azure runs `npm ci`/`pip install
 # -r requirements.txt` itself after unzipping — no local build step needed.
+#
+# Optionally pass one or more of: server cvparser engine scoring
+# to redeploy only those apps, e.g.:
+#   bash deploy/azure/deploy.sh engine scoring
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -78,9 +82,19 @@ zip_and_deploy() {
     --clean true
 }
 
-zip_and_deploy "server" "$SERVER_APP" "server.zip"
-zip_and_deploy "cv_parser" "$CVPARSER_APP" "cvparser.zip"
-zip_and_deploy "semantic_engine" "$ENGINE_APP" "engine.zip"
-zip_and_deploy "services/scoring" "$SCORING_APP" "scoring.zip"
+TARGETS=("$@")
+if [ ${#TARGETS[@]} -eq 0 ]; then
+  TARGETS=(server cvparser engine scoring)
+fi
+
+for target in "${TARGETS[@]}"; do
+  case "$target" in
+    server)  zip_and_deploy "server" "$SERVER_APP" "server.zip" ;;
+    cvparser) zip_and_deploy "cv_parser" "$CVPARSER_APP" "cvparser.zip" ;;
+    engine)  zip_and_deploy "semantic_engine" "$ENGINE_APP" "engine.zip" ;;
+    scoring) zip_and_deploy "services/scoring" "$SCORING_APP" "scoring.zip" ;;
+    *) echo "Unknown target: $target (expected one of: server cvparser engine scoring)" >&2; exit 1 ;;
+  esac
+done
 
 echo "==> Done. Tail logs with: az webapp log tail --resource-group $RESOURCE_GROUP --name <app-name>"
