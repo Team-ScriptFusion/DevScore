@@ -1,213 +1,171 @@
-# Deploying DevScore's backend to Azure (single VM)
+# Deploying DevScore's backend to Azure App Service
 
 Moves the three backend services currently on Render — `server` (Node),
 `cv_parser` (Python/Flask), `semantic_engine` (Python/Flask) — plus the new
 `services/scoring` (Python/Flask) readiness-scoring model, which has never
-been deployed anywhere yet, onto one always-on Azure VM, fronted by nginx
-with your own subdomains and free TLS. The client stays on Vercel unless you
-decide to move it too.
+been deployed anywhere yet, onto Azure App Service. The client stays on
+Vercel unless you decide to move it too.
 
-**Why one VM instead of one-service-per-container (ACI/App Service):**
-these are four small, low-traffic services. A `B1s` VM (free-tier eligible
-for the first 12 months on a new Azure subscription) comfortably runs all
-four, avoids paying for an Application Gateway / Load Balancer, and is one
-thing to patch instead of four. Move to Azure Container Apps / AKS later if
-traffic actually demands it.
+**Why App Service instead of a VM:** a single Linux VM (EC2-style) was the
+original plan, but Azure for Students subscriptions commonly ship with a
+0-vCPU quota for every general-purpose VM family (`Standard_Bs`,
+`Standard_Dsv3`, ...) in every region — VM creation fails with
+`NotAvailableForSubscription` no matter which size/region you pick, and
+raising that quota needs a support request. App Service Plans draw from a
+**separate** quota pool that student subscriptions do have, sidestepping
+the problem entirely — and as a bonus there's no nginx, systemd, or certbot
+to manage: each app gets its own `https://<name>.azurewebsites.net`
+hostname with a free managed TLS certificate out of the box.
 
-**Subdomains used below** (adjust if you want different names):
-- `api.madhushan.me` → Node server (port 5000)
-- `cvparser.madhushan.me` → cv_parser (port 5001)
-- `engine.madhushan.me` → semantic_engine (port 5002)
-- `scoring.madhushan.me` → services/scoring (port 5004)
+**One App Service Plan, four Web Apps** — these are four small,
+low-traffic services, so they share a single `B1` (Basic) Linux plan rather
+than paying for four. Each web app still gets its own hostname, own
+environment variables, own logs, and can be scaled to its own plan later if
+one service's traffic outgrows the others.
+
+**Hostnames** (defaults from `provision.sh` — override via env vars if you
+want different names):
+- `devscore-server.azurewebsites.net` → Node server
+- `devscore-cvparser.azurewebsites.net` → cv_parser
+- `devscore-engine.azurewebsites.net` → semantic_engine
+- `devscore-scoring.azurewebsites.net` → services/scoring
 
 ---
 
-## 1. Create the VM
-
-Azure Portal → Virtual Machines → Create:
-- **Image:** Ubuntu Server 22.04 LTS
-- **Size:** `Standard_B1s` (1 vCPU / 1GB RAM — free-tier eligible for 12
-  months on a new subscription; 750 hrs/month included) — enough for all
-  four services at this traffic level. If the scoring service's numpy/
-  scipy/scikit-learn stack makes `B1s` (1GB RAM) feel tight once all four
-  are running, size up to `B1ms` (2GB) instead.
-- **Authentication:** SSH public key (generate/download a new key pair if
-  you don't already have one — it's the only way to SSH in)
-- **Inbound ports:** allow SSH (22) — restrict its source later in step 2
-- **Disks:** default 30GB (Standard SSD) is fine — still within the
-  free-tier disk allowance
-
-Create it.
-
-## 2. Lock down the network security group
-
-Azure Portal → the VM's **Networking** blade (or the associated NSG
-directly):
-- **SSH (22):** restrict the source to **your IP only** (not `Any`) — edit
-  the auto-created SSH rule's source to "My IP address"
-- **HTTP (80):** add an inbound rule allowing `Any` source
-- **HTTPS (443):** add an inbound rule allowing `Any` source
-
-## 3. Confirm the static public IP
-
-By default Azure assigns the VM's Public IP as **Static** when created via
-"Create VM" with default settings on current API versions — double-check
-under the VM's **Networking** blade → the public IP resource → **Assignment**
-is `Static`, not `Dynamic`. If it's Dynamic, change it (VM must be stopped
-first) so the IP doesn't change on restart and break DNS.
-
-## 4. Point DNS at it
-
-In whatever registrar/DNS host manages `madhushan.me` (Azure DNS if you
-delegated the zone there, otherwise wherever you bought it), add four **A
-records**, each pointing at the VM's public IP from step 3:
-
-```
-api.madhushan.me       A   <vm-public-ip>
-cvparser.madhushan.me  A   <vm-public-ip>
-engine.madhushan.me    A   <vm-public-ip>
-scoring.madhushan.me   A   <vm-public-ip>
-```
-
-DNS propagation can take a few minutes to a few hours — you can move on
-while it settles.
-
-## 5. SSH in and run the bootstrap script
+## 1. Install the Azure CLI and log in
 
 ```bash
-ssh -i your-key.pem azureuser@<vm-public-ip>
-git clone https://github.com/Team-ScriptFusion/DevScore.git /tmp/devscore-bootstrap
-bash /tmp/devscore-bootstrap/deploy/azure/setup.sh
+az login
+az account set --subscription "Azure for Students"
 ```
 
-This installs Node 20, Python 3 + venv, nginx, certbot, git, creates a
-dedicated non-login `devscore` system user, and enables `ufw` (SSH + HTTP/S
-only).
+## 2. Find your subscription's allowed region
 
-## 6. Clone the real repo as the `devscore` user
+`az appservice list-locations --sku B1` lists every region the `B1` SKU
+exists in worldwide — it does **not** account for a separate
+subscription-level location-restriction policy that Azure for Students
+accounts get, which locks deployment to one "best available" region
+regardless of general SKU/quota availability (`provision.sh` will fail with
+`RequestDisallowedByAzure` if you pick the wrong one). The Azure VM-creation
+wizard's default region is usually a reliable hint at which region that is
+(`Central India`, in testing for this project) — `provision.sh` defaults
+`LOCATION` to `centralindia` for that reason. If it's different for your
+subscription, check **Portal → Subscriptions → your subscription →
+Policies → Compliance** for the location-restriction policy's allowed
+region, or just try `provision.sh` and adjust `LOCATION` based on the
+error.
+
+## 3. Provision the plan and the four web apps
 
 ```bash
-sudo -u devscore -H bash -c '
-  git clone https://github.com/Team-ScriptFusion/DevScore.git /opt/devscore
-'
-rm -rf /tmp/devscore-bootstrap
+bash deploy/azure/provision.sh
 ```
 
-(Private repo: generate a GitHub PAT with repo read access first and clone
-with `https://<token>@github.com/...` instead, or set up a deploy key.)
+(Or `LOCATION=<region> bash deploy/azure/provision.sh` to override.) This
+creates the resource group, one `B1` Linux App Service Plan, and the four
+web apps (Node 22 for `server`, Python 3.11 for the other three), sets each
+Python app's gunicorn startup command, and turns on
+`SCM_DO_BUILD_DURING_DEPLOYMENT` so a later `az webapp deploy` triggers
+Azure's own `npm ci` / `pip install -r requirements.txt` instead of
+expecting a pre-built artifact.
 
-## 7. Create the four `.env` files
+The script is safe to rerun if it fails partway through — `az group
+create`/`az appservice plan create`/`az webapp create` all no-op on
+resources that already exist. If it fails on the resource group step with
+`InvalidResourceGroupLocation` because an earlier run created it in a
+different region, delete it first (`az group delete --name devscore-rg
+--yes`) and rerun.
 
-Three of these are **not** in git — copy the values straight from each
-service's current Render "Environment" tab, with the URLs updated to the
-new subdomains. The fourth (`services/scoring`) has never been deployed
-before, so there's no Render tab to copy from — set it up fresh.
+Override any of `RESOURCE_GROUP`, `LOCATION`, `PLAN_NAME`, `PLAN_SKU`,
+`SERVER_APP`, `CVPARSER_APP`, `ENGINE_APP`, `SCORING_APP` as environment
+variables before running it if you want different names/region/SKU.
 
-**`/opt/devscore/server/.env`** — same as Render's `devscore-poxa`, except:
+## 4. Configure environment variables
+
+Each app's settings are its `.env` — set them with `az webapp config
+appsettings set` (values shown are examples; copy the real ones from each
+service's current Render "Environment" tab where noted).
+
+**`devscore-server`** — same as Render's `devscore-poxa`, except the three
+downstream URLs and both OAuth callback URLs point at the new hostnames:
+```bash
+az webapp config appsettings set --resource-group devscore-rg --name devscore-server --settings \
+  CV_PARSER_URL="https://devscore-cvparser.azurewebsites.net" \
+  SEMANTIC_ENGINE_URL="https://devscore-engine.azurewebsites.net" \
+  SCORING_URL="https://devscore-scoring.azurewebsites.net" \
+  GITHUB_CALLBACK_URL="https://devscore-server.azurewebsites.net/api/auth/github/callback" \
+  GOOGLE_CALLBACK_URL="https://devscore-server.azurewebsites.net/api/auth/google/callback" \
+  SUPABASE_URL="<copy from Render>" \
+  SUPABASE_SERVICE_ROLE_KEY="<copy from Render>" \
+  JWT_SECRET="<copy from Render>" \
+  CLIENT_URL="<your Vercel client URL>" \
+  GOOGLE_CLIENT_ID="<copy from Render>" \
+  GOOGLE_CLIENT_SECRET="<copy from Render>" \
+  GITHUB_CLIENT_ID="<copy from Render>" \
+  GITHUB_CLIENT_SECRET="<copy from Render>" \
+  PARSER_API_KEY="<same value as cv_parser's below>" \
+  ENGINE_API_KEY="<same value as semantic_engine's below>" \
+  SCORING_API_KEY="<same value as scoring's below>"
 ```
-CV_PARSER_URL=https://cvparser.madhushan.me
-SEMANTIC_ENGINE_URL=https://engine.madhushan.me
-SCORING_URL=https://scoring.madhushan.me
-GITHUB_CALLBACK_URL=https://api.madhushan.me/api/auth/github/callback
-GOOGLE_CALLBACK_URL=https://api.madhushan.me/api/auth/google/callback
+
+**`devscore-cvparser`** — copy from Render's cv_parser service:
+```bash
+az webapp config appsettings set --resource-group devscore-rg --name devscore-cvparser --settings \
+  PARSER_API_KEY="<matches server's PARSER_API_KEY above>"
 ```
-(`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `JWT_SECRET`, `CLIENT_URL`,
-`GOOGLE_CLIENT_ID/SECRET`, `GITHUB_CLIENT_ID/SECRET`, the two other API
-keys — copy as-is from Render. Add `SCORING_API_KEY` matching whatever you
-set in the scoring service's own `.env` below.)
 
-**`/opt/devscore/cv_parser/.env`** — copy from Render's cv_parser service
-(likely just `API_KEY`/similar + `PORT`, which systemd overrides anyway).
-
-**`/opt/devscore/semantic_engine/.env`** — same as the `semantic-engine`
-Render service: `GITHUB_TOKEN`, `ENGINE_API_KEY`.
-
-**`/opt/devscore/services/scoring/.env`** — new service, no existing
-Render values to copy. It only reads one variable
-(`services/scoring/app.py`):
+**`devscore-engine`** — same as the `semantic-engine` Render service:
+```bash
+az webapp config appsettings set --resource-group devscore-rg --name devscore-engine --settings \
+  GITHUB_TOKEN="<copy from Render>" \
+  ENGINE_API_KEY="<matches server's ENGINE_API_KEY above>"
 ```
-SCORING_API_KEY=<generate a random secret>
+
+**`devscore-scoring`** — new service, no existing Render values to copy. It
+only reads one variable (`services/scoring/app.py`):
+```bash
+az webapp config appsettings set --resource-group devscore-rg --name devscore-scoring --settings \
+  SCORING_API_KEY="<generate a random secret, matches server's SCORING_API_KEY above>"
 ```
 Leaving it unset degrades to open access (fine for local dev, not for a
-public VM) — always set it here and mirror the same value into
-`server/.env`'s `SCORING_API_KEY` above.
+public app) — always set it here.
 
-Lock these down:
-```bash
-sudo chown devscore:devscore /opt/devscore/*/.env /opt/devscore/services/scoring/.env
-sudo chmod 600 /opt/devscore/*/.env /opt/devscore/services/scoring/.env
-```
-
-## 8. Install dependencies
+## 5. Deploy the code
 
 ```bash
-sudo -u devscore -H bash -c '
-  cd /opt/devscore/server && npm ci --omit=dev
-
-  cd /opt/devscore/cv_parser && python3 -m venv venv && venv/bin/pip install -r requirements.txt
-
-  cd /opt/devscore/semantic_engine && python3 -m venv venv && venv/bin/pip install -r requirements.txt
-
-  cd /opt/devscore/services/scoring && python3 -m venv venv && venv/bin/pip install -r requirements.txt
-'
+bash deploy/azure/deploy.sh
 ```
 
-The scoring service's `requirements.txt` pulls in numpy/scipy/scikit-learn
-— this install will take noticeably longer than the other two Python
-services, especially on a `B1s`.
+This zips each service's own directory (excluding `venv/`, `node_modules/`,
+`__pycache__/`, `.env`) and pushes it with `az webapp deploy`. Azure then
+runs its own build (`npm ci` for the Node app, `pip install -r
+requirements.txt` for the three Python apps) because of the
+`SCM_DO_BUILD_DURING_DEPLOYMENT` setting from step 3 — the first deploy of
+each Python app will take noticeably longer for `services/scoring`, since
+its `requirements.txt` pulls in numpy/scipy/scikit-learn.
 
-## 9. Install and start the systemd services
-
-```bash
-sudo cp /opt/devscore/deploy/azure/systemd/*.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now devscore-server cv-parser semantic-engine scoring
-sudo systemctl status devscore-server cv-parser semantic-engine scoring
-```
-
-All four now start on boot and auto-restart on crash (`Restart=always` in
-each unit). Check logs any time with
-`sudo journalctl -u <service-name> -f`.
-
-## 10. nginx + TLS
-
-```bash
-sudo cp /opt/devscore/deploy/azure/nginx/devscore.conf /etc/nginx/sites-available/devscore.conf
-sudo ln -s /etc/nginx/sites-available/devscore.conf /etc/nginx/sites-enabled/
-sudo rm -f /etc/nginx/sites-enabled/default
-sudo nginx -t && sudo systemctl reload nginx
-```
-
-Once DNS from step 4 has propagated (`dig api.madhushan.me` should show the
-VM's public IP), get certificates — certbot edits the nginx config in place
-to add the `listen 443 ssl` blocks and sets up auto-renewal:
-
-```bash
-sudo certbot --nginx -d api.madhushan.me -d cvparser.madhushan.me -d engine.madhushan.me -d scoring.madhushan.me
-```
-
-## 11. Update the OAuth apps
+## 6. Update the OAuth apps
 
 - GitHub OAuth App settings → Authorization callback URL →
-  `https://api.madhushan.me/api/auth/github/callback`
+  `https://devscore-server.azurewebsites.net/api/auth/github/callback`
 - Google Cloud Console → OAuth client → Authorized redirect URIs →
-  `https://api.madhushan.me/api/auth/google/callback`
+  `https://devscore-server.azurewebsites.net/api/auth/google/callback`
 
-## 12. Point the client at the new API
+## 7. Point the client at the new API
 
 In `client/vercel.json`, change the rewrite destination:
 ```json
-"destination": "https://api.madhushan.me/api/:path*"
+"destination": "https://devscore-server.azurewebsites.net/api/:path*"
 ```
 Commit, push, let Vercel redeploy (or trigger manually).
 
-## 13. Verify
+## 8. Verify
 
 ```bash
-curl https://api.madhushan.me/api/health
-curl https://cvparser.madhushan.me/health
-curl https://engine.madhushan.me/health
-curl https://scoring.madhushan.me/health
+curl https://devscore-server.azurewebsites.net/api/health
+curl https://devscore-cvparser.azurewebsites.net/health
+curl https://devscore-engine.azurewebsites.net/health
+curl https://devscore-scoring.azurewebsites.net/health
 ```
 Then walk through the real product flow: upload a resume, connect GitHub,
 check the readiness score lands.
@@ -215,26 +173,31 @@ check the readiness score lands.
 ## Ongoing redeploys
 
 ```bash
-ssh -i your-key.pem azureuser@<vm-public-ip>
-sudo -u devscore bash /opt/devscore/deploy/azure/deploy.sh
+bash deploy/azure/deploy.sh
 ```
+(This is a manual step for now — wiring GitHub Actions to run it on every
+push is a reasonable next step once this is stable, but is out of scope
+here.)
 
-(This is a manual step for now — wiring GitHub Actions to run it over SSH on
-every push is a reasonable next step once this is stable, but is out of
-scope here.)
+## Custom domain (optional)
+
+`B1` supports custom domains and a free App Service Managed Certificate.
+Azure Portal → the web app → **Custom domains** → add
+`api.madhushan.me` (or similar) → add the CNAME/TXT records it gives you at
+your DNS host → once verified, add a free managed certificate for it. Do
+this per app if you want `cvparser.madhushan.me` /
+`engine.madhushan.me` / `scoring.madhushan.me` too, then update the URLs in
+steps 4/6/7 accordingly.
 
 ## Cost / free-tier notes
 
-- `Standard_B1s`: covered by Azure's free-tier VM allowance for the first 12
-  months on a new subscription (750 hrs/month) — one instance running 24/7
-  is exactly ~730 hrs/month, so this is $0 under the standard Azure Free
-  Account offer during that window. After 12 months (or on a
-  pay-as-you-go/existing subscription), `B1s` runs a few dollars/month —
-  check current pricing for your region.
-- Static public IP: Basic SKU static IPs are typically low/no cost while
-  attached to a running VM; Azure can charge a small hourly fee for an
-  **unattached** reserved IP, so don't deallocate the VM while keeping the
-  IP reserved without checking current pricing.
+- `B1` Linux App Service Plan: not part of the always-free tier, but cheap
+  (roughly $13/month at time of writing, shared across all four apps since
+  they're on one plan) — check current pricing for your region. If your
+  subscription's App Service quota only allows `F1` (Free), you can start
+  there instead, but note F1 has no custom-domain support, a daily compute
+  quota, and idles the app after inactivity (fine for testing, not for an
+  always-on production backend).
 - Data transfer out: Azure's free tier includes a monthly outbound data
   allowance, not a concern at this scale.
 - Set a **Cost Management → Budget** alert (e.g. $5) so you get an email if

@@ -1,26 +1,35 @@
 #!/usr/bin/env bash
-# Redeploy: pull latest master, reinstall deps if they changed, restart all
-# four services. Run from /opt/devscore as the devscore user:
-#   sudo -u devscore bash deploy/azure/deploy.sh
+# Redeploy: zip each service's own directory and push it with `az webapp
+# deploy`. Run from the repo root, with the Azure CLI logged in and the 4
+# web apps already provisioned (deploy/azure/provision.sh). Each app has
+# SCM_DO_BUILD_DURING_DEPLOYMENT=true, so Azure runs `npm ci`/`pip install
+# -r requirements.txt` itself after unzipping — no local build step needed.
 set -euo pipefail
-cd /opt/devscore
+cd "$(dirname "$0")/../.."
 
-echo "==> Pulling latest master"
-git pull origin master
+RESOURCE_GROUP="${RESOURCE_GROUP:-devscore-rg}"
+SERVER_APP="${SERVER_APP:-devscore-server}"
+CVPARSER_APP="${CVPARSER_APP:-devscore-cvparser}"
+ENGINE_APP="${ENGINE_APP:-devscore-engine}"
+SCORING_APP="${SCORING_APP:-devscore-scoring}"
 
-echo "==> server (Node)"
-(cd server && npm ci --omit=dev)
+WORKDIR="$(mktemp -d)"
+trap 'rm -rf "$WORKDIR"' EXIT
 
-echo "==> cv_parser (Python)"
-(cd cv_parser && venv/bin/pip install -r requirements.txt)
+zip_and_deploy() {
+  local src_dir="$1" app_name="$2" zip_name="$3"
+  echo "==> $app_name ($src_dir)"
+  (cd "$src_dir" && zip -rq "$WORKDIR/$zip_name" . -x "venv/*" -x "node_modules/*" -x "__pycache__/*" -x ".env")
+  az webapp deploy \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$app_name" \
+    --src-path "$WORKDIR/$zip_name" \
+    --type zip
+}
 
-echo "==> semantic_engine (Python)"
-(cd semantic_engine && venv/bin/pip install -r requirements.txt)
+zip_and_deploy "server" "$SERVER_APP" "server.zip"
+zip_and_deploy "cv_parser" "$CVPARSER_APP" "cvparser.zip"
+zip_and_deploy "semantic_engine" "$ENGINE_APP" "engine.zip"
+zip_and_deploy "services/scoring" "$SCORING_APP" "scoring.zip"
 
-echo "==> scoring (Python)"
-(cd services/scoring && venv/bin/pip install -r requirements.txt)
-
-echo "==> Restarting services (requires sudo)"
-sudo systemctl restart devscore-server cv-parser semantic-engine scoring
-
-echo "==> Done. Tail logs with: sudo journalctl -u devscore-server -f"
+echo "==> Done. Tail logs with: az webapp log tail --resource-group $RESOURCE_GROUP --name <app-name>"
