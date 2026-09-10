@@ -32,16 +32,28 @@ zip_and_deploy() {
   if command -v zip >/dev/null 2>&1; then
     (cd "$src_dir" && zip -rq "$zip_path" . -x "venv/*" -x "node_modules/*" -x "__pycache__/*" -x ".env")
   else
-    # Git Bash on Windows usually has no `zip` binary — fall back to
-    # PowerShell's Compress-Archive, which is always present.
+    # Git Bash on Windows usually has no `zip` binary. PowerShell's
+    # Compress-Archive is present everywhere, but has a longstanding bug:
+    # it stores nested entries with Windows backslashes (`src\app.js`)
+    # instead of forward slashes, which corrupts the archive for Linux's
+    # unzip/rsync on the App Service side. Stage a filtered copy and use
+    # .NET's ZipFile.CreateFromDirectory instead, which always emits
+    # forward-slash entry names.
     local win_src win_zip
     win_src="$(to_win_path "$(cd "$src_dir" && pwd)")"
     win_zip="$(to_win_path "$zip_path")"
     powershell.exe -NoProfile -Command "
       \$ErrorActionPreference = 'Stop'
+      \$staging = Join-Path \$env:TEMP ('devscore_stage_' + [guid]::NewGuid())
+      New-Item -ItemType Directory -Path \$staging | Out-Null
       \$exclude = @('venv','node_modules','__pycache__','.env')
-      \$items = Get-ChildItem -LiteralPath '$win_src' -Force | Where-Object { \$exclude -notcontains \$_.Name }
-      Compress-Archive -Path \$items.FullName -DestinationPath '$win_zip' -Force
+      Get-ChildItem -LiteralPath '$win_src' -Force | Where-Object { \$exclude -notcontains \$_.Name } | ForEach-Object {
+        Copy-Item -LiteralPath \$_.FullName -Destination (Join-Path \$staging \$_.Name) -Recurse -Force
+      }
+      Add-Type -AssemblyName System.IO.Compression.FileSystem
+      if (Test-Path '$win_zip') { Remove-Item '$win_zip' -Force }
+      [System.IO.Compression.ZipFile]::CreateFromDirectory(\$staging, '$win_zip')
+      Remove-Item \$staging -Recurse -Force
     "
   fi
 
