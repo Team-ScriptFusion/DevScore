@@ -16,14 +16,39 @@ SCORING_APP="${SCORING_APP:-devscore-scoring}"
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
+to_win_path() {
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -w "$1"
+  else
+    echo "$1"
+  fi
+}
+
 zip_and_deploy() {
   local src_dir="$1" app_name="$2" zip_name="$3"
+  local zip_path="$WORKDIR/$zip_name"
   echo "==> $app_name ($src_dir)"
-  (cd "$src_dir" && zip -rq "$WORKDIR/$zip_name" . -x "venv/*" -x "node_modules/*" -x "__pycache__/*" -x ".env")
+
+  if command -v zip >/dev/null 2>&1; then
+    (cd "$src_dir" && zip -rq "$zip_path" . -x "venv/*" -x "node_modules/*" -x "__pycache__/*" -x ".env")
+  else
+    # Git Bash on Windows usually has no `zip` binary — fall back to
+    # PowerShell's Compress-Archive, which is always present.
+    local win_src win_zip
+    win_src="$(to_win_path "$(cd "$src_dir" && pwd)")"
+    win_zip="$(to_win_path "$zip_path")"
+    powershell.exe -NoProfile -Command "
+      \$ErrorActionPreference = 'Stop'
+      \$exclude = @('venv','node_modules','__pycache__','.env')
+      \$items = Get-ChildItem -LiteralPath '$win_src' -Force | Where-Object { \$exclude -notcontains \$_.Name }
+      Compress-Archive -Path \$items.FullName -DestinationPath '$win_zip' -Force
+    "
+  fi
+
   az webapp deploy \
     --resource-group "$RESOURCE_GROUP" \
     --name "$app_name" \
-    --src-path "$WORKDIR/$zip_name" \
+    --src-path "$zip_path" \
     --type zip
 }
 
