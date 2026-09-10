@@ -1,21 +1,24 @@
 # Deploying DevScore's backend to Azure (single VM)
 
 Moves the three backend services currently on Render — `server` (Node),
-`cv_parser` (Python/Flask), `semantic_engine` (Python/Flask) — onto one
-always-on Azure VM, fronted by nginx with your own subdomains and free TLS.
-The client stays on Vercel unless you decide to move it too.
+`cv_parser` (Python/Flask), `semantic_engine` (Python/Flask) — plus the new
+`services/scoring` (Python/Flask) readiness-scoring model, which has never
+been deployed anywhere yet, onto one always-on Azure VM, fronted by nginx
+with your own subdomains and free TLS. The client stays on Vercel unless you
+decide to move it too.
 
 **Why one VM instead of one-service-per-container (ACI/App Service):**
-these are three small, low-traffic services. A `B1s` VM (free-tier eligible
+these are four small, low-traffic services. A `B1s` VM (free-tier eligible
 for the first 12 months on a new Azure subscription) comfortably runs all
-three, avoids paying for an Application Gateway / Load Balancer, and is one
-thing to patch instead of three. Move to Azure Container Apps / AKS later if
+four, avoids paying for an Application Gateway / Load Balancer, and is one
+thing to patch instead of four. Move to Azure Container Apps / AKS later if
 traffic actually demands it.
 
 **Subdomains used below** (adjust if you want different names):
 - `api.madhushan.me` → Node server (port 5000)
 - `cvparser.madhushan.me` → cv_parser (port 5001)
 - `engine.madhushan.me` → semantic_engine (port 5002)
+- `scoring.madhushan.me` → services/scoring (port 5004)
 
 ---
 
@@ -25,7 +28,9 @@ Azure Portal → Virtual Machines → Create:
 - **Image:** Ubuntu Server 22.04 LTS
 - **Size:** `Standard_B1s` (1 vCPU / 1GB RAM — free-tier eligible for 12
   months on a new subscription; 750 hrs/month included) — enough for all
-  three services at this traffic level
+  four services at this traffic level. If the scoring service's numpy/
+  scipy/scikit-learn stack makes `B1s` (1GB RAM) feel tight once all four
+  are running, size up to `B1ms` (2GB) instead.
 - **Authentication:** SSH public key (generate/download a new key pair if
   you don't already have one — it's the only way to SSH in)
 - **Inbound ports:** allow SSH (22) — restrict its source later in step 2
@@ -54,13 +59,14 @@ first) so the IP doesn't change on restart and break DNS.
 ## 4. Point DNS at it
 
 In whatever registrar/DNS host manages `madhushan.me` (Azure DNS if you
-delegated the zone there, otherwise wherever you bought it), add three **A
+delegated the zone there, otherwise wherever you bought it), add four **A
 records**, each pointing at the VM's public IP from step 3:
 
 ```
 api.madhushan.me       A   <vm-public-ip>
 cvparser.madhushan.me  A   <vm-public-ip>
 engine.madhushan.me    A   <vm-public-ip>
+scoring.madhushan.me   A   <vm-public-ip>
 ```
 
 DNS propagation can take a few minutes to a few hours — you can move on
@@ -90,22 +96,25 @@ rm -rf /tmp/devscore-bootstrap
 (Private repo: generate a GitHub PAT with repo read access first and clone
 with `https://<token>@github.com/...` instead, or set up a deploy key.)
 
-## 7. Create the three `.env` files
+## 7. Create the four `.env` files
 
-These are **not** in git — copy the values straight from each service's
-current Render "Environment" tab, with the URLs updated to the new
-subdomains.
+Three of these are **not** in git — copy the values straight from each
+service's current Render "Environment" tab, with the URLs updated to the
+new subdomains. The fourth (`services/scoring`) has never been deployed
+before, so there's no Render tab to copy from — set it up fresh.
 
 **`/opt/devscore/server/.env`** — same as Render's `devscore-poxa`, except:
 ```
 CV_PARSER_URL=https://cvparser.madhushan.me
 SEMANTIC_ENGINE_URL=https://engine.madhushan.me
+SCORING_URL=https://scoring.madhushan.me
 GITHUB_CALLBACK_URL=https://api.madhushan.me/api/auth/github/callback
 GOOGLE_CALLBACK_URL=https://api.madhushan.me/api/auth/google/callback
 ```
 (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `JWT_SECRET`, `CLIENT_URL`,
-`GOOGLE_CLIENT_ID/SECRET`, `GITHUB_CLIENT_ID/SECRET`, the two API keys —
-copy as-is from Render.)
+`GOOGLE_CLIENT_ID/SECRET`, `GITHUB_CLIENT_ID/SECRET`, the two other API
+keys — copy as-is from Render. Add `SCORING_API_KEY` matching whatever you
+set in the scoring service's own `.env` below.)
 
 **`/opt/devscore/cv_parser/.env`** — copy from Render's cv_parser service
 (likely just `API_KEY`/similar + `PORT`, which systemd overrides anyway).
@@ -113,10 +122,20 @@ copy as-is from Render.)
 **`/opt/devscore/semantic_engine/.env`** — same as the `semantic-engine`
 Render service: `GITHUB_TOKEN`, `ENGINE_API_KEY`.
 
+**`/opt/devscore/services/scoring/.env`** — new service, no existing
+Render values to copy. It only reads one variable
+(`services/scoring/app.py`):
+```
+SCORING_API_KEY=<generate a random secret>
+```
+Leaving it unset degrades to open access (fine for local dev, not for a
+public VM) — always set it here and mirror the same value into
+`server/.env`'s `SCORING_API_KEY` above.
+
 Lock these down:
 ```bash
-sudo chown devscore:devscore /opt/devscore/*/.env
-sudo chmod 600 /opt/devscore/*/.env
+sudo chown devscore:devscore /opt/devscore/*/.env /opt/devscore/services/scoring/.env
+sudo chmod 600 /opt/devscore/*/.env /opt/devscore/services/scoring/.env
 ```
 
 ## 8. Install dependencies
@@ -128,19 +147,25 @@ sudo -u devscore -H bash -c '
   cd /opt/devscore/cv_parser && python3 -m venv venv && venv/bin/pip install -r requirements.txt
 
   cd /opt/devscore/semantic_engine && python3 -m venv venv && venv/bin/pip install -r requirements.txt
+
+  cd /opt/devscore/services/scoring && python3 -m venv venv && venv/bin/pip install -r requirements.txt
 '
 ```
+
+The scoring service's `requirements.txt` pulls in numpy/scipy/scikit-learn
+— this install will take noticeably longer than the other two Python
+services, especially on a `B1s`.
 
 ## 9. Install and start the systemd services
 
 ```bash
 sudo cp /opt/devscore/deploy/azure/systemd/*.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now devscore-server cv-parser semantic-engine
-sudo systemctl status devscore-server cv-parser semantic-engine
+sudo systemctl enable --now devscore-server cv-parser semantic-engine scoring
+sudo systemctl status devscore-server cv-parser semantic-engine scoring
 ```
 
-All three now start on boot and auto-restart on crash (`Restart=always` in
+All four now start on boot and auto-restart on crash (`Restart=always` in
 each unit). Check logs any time with
 `sudo journalctl -u <service-name> -f`.
 
@@ -158,7 +183,7 @@ VM's public IP), get certificates — certbot edits the nginx config in place
 to add the `listen 443 ssl` blocks and sets up auto-renewal:
 
 ```bash
-sudo certbot --nginx -d api.madhushan.me -d cvparser.madhushan.me -d engine.madhushan.me
+sudo certbot --nginx -d api.madhushan.me -d cvparser.madhushan.me -d engine.madhushan.me -d scoring.madhushan.me
 ```
 
 ## 11. Update the OAuth apps
@@ -182,6 +207,7 @@ Commit, push, let Vercel redeploy (or trigger manually).
 curl https://api.madhushan.me/api/health
 curl https://cvparser.madhushan.me/health
 curl https://engine.madhushan.me/health
+curl https://scoring.madhushan.me/health
 ```
 Then walk through the real product flow: upload a resume, connect GitHub,
 check the readiness score lands.

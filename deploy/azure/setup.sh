@@ -4,7 +4,7 @@
 #
 # What this does NOT do (deliberately manual — see deploy/azure/README.md):
 #   - clone the repo (needs your GitHub auth)
-#   - write the three .env files (secrets)
+#   - write the four .env files (secrets)
 #   - configure DNS / obtain TLS certs
 set -euo pipefail
 
@@ -43,8 +43,8 @@ cat <<'EOF'
 
 ==> Base packages installed. Next steps (see deploy/azure/README.md):
     1. Clone the repo into /opt/devscore as the devscore user
-    2. Create server/.env, cv_parser/.env, semantic_engine/.env
-    3. python3 -m venv venv + pip install -r requirements.txt for the two Python services
+    2. Create server/.env, cv_parser/.env, semantic_engine/.env, services/scoring/.env
+    3. python3 -m venv venv + pip install -r requirements.txt for the three Python services
     4. npm ci --omit=dev for the Node server
     5. Copy deploy/azure/systemd/*.service into /etc/systemd/system/, enable + start them
     6. Copy deploy/azure/nginx/devscore.conf into /etc/nginx/sites-available/, symlink into sites-enabled
