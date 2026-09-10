@@ -33,27 +33,40 @@ zip_and_deploy() {
     (cd "$src_dir" && zip -rq "$zip_path" . -x "venv/*" -x "node_modules/*" -x "__pycache__/*" -x ".env")
   else
     # Git Bash on Windows usually has no `zip` binary. PowerShell's
-    # Compress-Archive is present everywhere, but has a longstanding bug:
-    # it stores nested entries with Windows backslashes (`src\app.js`)
-    # instead of forward slashes, which corrupts the archive for Linux's
-    # unzip/rsync on the App Service side. Stage a filtered copy and use
-    # .NET's ZipFile.CreateFromDirectory instead, which always emits
-    # forward-slash entry names.
+    # Compress-Archive AND .NET's ZipFile.CreateFromDirectory both have a
+    # longstanding bug on Windows PowerShell's (.NET Framework) runtime:
+    # they store nested entries with backslashes (`src\app.js`) instead of
+    # forward slashes, corrupting the archive for Linux's unzip/rsync on
+    # the App Service side. Build the zip entry-by-entry instead, forcing
+    # forward-slash entry names ourselves rather than trusting either
+    # helper to normalize them.
     local win_src win_zip
     win_src="$(to_win_path "$(cd "$src_dir" && pwd)")"
     win_zip="$(to_win_path "$zip_path")"
     powershell.exe -NoProfile -Command "
       \$ErrorActionPreference = 'Stop'
-      \$staging = Join-Path \$env:TEMP ('devscore_stage_' + [guid]::NewGuid())
-      New-Item -ItemType Directory -Path \$staging | Out-Null
       \$exclude = @('venv','node_modules','__pycache__','.env')
-      Get-ChildItem -LiteralPath '$win_src' -Force | Where-Object { \$exclude -notcontains \$_.Name } | ForEach-Object {
-        Copy-Item -LiteralPath \$_.FullName -Destination (Join-Path \$staging \$_.Name) -Recurse -Force
+      \$srcRoot = '$win_src'
+      \$zipPath = '$win_zip'
+      if (Test-Path \$zipPath) { Remove-Item \$zipPath -Force }
+      Add-Type -AssemblyName System.IO.Compression
+      \$fs = [System.IO.File]::Open(\$zipPath, [System.IO.FileMode]::Create)
+      \$archive = New-Object System.IO.Compression.ZipArchive(\$fs, [System.IO.Compression.ZipArchiveMode]::Create)
+      Get-ChildItem -LiteralPath \$srcRoot -Recurse -File -Force | Where-Object {
+        \$rel = \$_.FullName.Substring(\$srcRoot.Length + 1)
+        \$parts = \$rel -split '[\\\\/]'
+        -not (\$exclude | Where-Object { \$parts -contains \$_ })
+      } | ForEach-Object {
+        \$relPath = (\$_.FullName.Substring(\$srcRoot.Length + 1)) -replace '\\\\','/'
+        \$entry = \$archive.CreateEntry(\$relPath, [System.IO.Compression.CompressionLevel]::Optimal)
+        \$entryStream = \$entry.Open()
+        \$fileStream = [System.IO.File]::OpenRead(\$_.FullName)
+        \$fileStream.CopyTo(\$entryStream)
+        \$fileStream.Dispose()
+        \$entryStream.Dispose()
       }
-      Add-Type -AssemblyName System.IO.Compression.FileSystem
-      if (Test-Path '$win_zip') { Remove-Item '$win_zip' -Force }
-      [System.IO.Compression.ZipFile]::CreateFromDirectory(\$staging, '$win_zip')
-      Remove-Item \$staging -Recurse -Force
+      \$archive.Dispose()
+      \$fs.Dispose()
     "
   fi
 
