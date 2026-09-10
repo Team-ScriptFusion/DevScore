@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Redeploy: pull latest master, reinstall deps if they changed, restart all
 # three services. Run from /opt/devscore as the devscore user:
-#   sudo -u devscore bash deploy/aws/deploy.sh
+#   sudo -u devscore bash deploy/azure/deploy.sh
 set -euo pipefail
 cd /opt/devscore
 

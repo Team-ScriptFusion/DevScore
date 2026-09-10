@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# One-time bootstrap for a fresh Ubuntu 22.04 EC2 instance. Run as a sudo
-# user (e.g. the default `ubuntu` user) via: bash setup.sh
+# One-time bootstrap for a fresh Ubuntu 22.04 Azure VM. Run as a sudo
+# user (e.g. the default `azureuser` user) via: bash setup.sh
 #
-# What this does NOT do (deliberately manual — see deploy/aws/README.md):
+# What this does NOT do (deliberately manual — see deploy/azure/README.md):
 #   - clone the repo (needs your GitHub auth)
 #   - write the three .env files (secrets)
 #   - configure DNS / obtain TLS certs
@@ -41,12 +41,12 @@ sudo ufw --force enable
 
 cat <<'EOF'
 
-==> Base packages installed. Next steps (see deploy/aws/README.md):
+==> Base packages installed. Next steps (see deploy/azure/README.md):
     1. Clone the repo into /opt/devscore as the devscore user
     2. Create server/.env, cv_parser/.env, semantic_engine/.env
     3. python3 -m venv venv + pip install -r requirements.txt for the two Python services
     4. npm ci --omit=dev for the Node server
-    5. Copy deploy/aws/systemd/*.service into /etc/systemd/system/, enable + start them
-    6. Copy deploy/aws/nginx/devscore.conf into /etc/nginx/sites-available/, symlink into sites-enabled
-    7. Point DNS at this instance's Elastic IP, then run certbot
+    5. Copy deploy/azure/systemd/*.service into /etc/systemd/system/, enable + start them
+    6. Copy deploy/azure/nginx/devscore.conf into /etc/nginx/sites-available/, symlink into sites-enabled
+    7. Point DNS at this VM's static public IP, then run certbot
 EOF
