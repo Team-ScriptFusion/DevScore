@@ -61,7 +61,8 @@ zip_and_deploy() {
     --resource-group "$RESOURCE_GROUP" \
     --name "$app_name" \
     --src-path "$zip_path" \
-    --type zip
+    --type zip \
+    --clean true
 }
 
 zip_and_deploy "server" "$SERVER_APP" "server.zip"
