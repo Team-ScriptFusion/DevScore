@@ -1,4 +1,4 @@
-import { env } from "../config/env.js";
+import { env, isSemanticEngineConfigured } from "../config/env.js";
 import {
   signGithubConnectState,
   signGithubLoginState,
@@ -14,9 +14,12 @@ import {
   revokeAllForUserProvider,
   revokeSession,
 } from "../models/OAuthSession.js";
-import { findByProviderId, findByEmail, createUser, ROLES } from "../models/User.js";
+import { findByProviderId, findByEmail, findById, createUser, ROLES } from "../models/User.js";
 import * as GithubConnection from "../models/GithubConnection.js";
+import * as Resume from "../models/Resume.js";
+import * as ReadinessReport from "../models/ReadinessReport.js";
 import { hasAnyApplication } from "../models/JobApplication.js";
+import { flattenSkillNames, scoreReadinessInBackground } from "../utils/readinessScoring.js";
 
 const SESSION_COOKIE = "devscore_session";
 
@@ -141,6 +144,41 @@ async function exchangeGithubCode(code) {
   return { accessToken, profile };
 }
 
+/**
+ * Starts job-readiness scoring for a student who connects GitHub *after*
+ * already having an extracted resume — the more common order isn't
+ * "connect GitHub, then upload," it's "upload, then realize you should
+ * connect GitHub." resumeController's own upload flow only triggers
+ * scoring when a GitHub connection already exists at upload time, so
+ * without this, connecting GitHub afterward would silently never score
+ * anything (no error shown anywhere — just a permanent "—" on Skills
+ * Status). Mirrors resumeController.uploadResume's trigger exactly, just
+ * from the other direction. Always (re)triggers on a successful connect,
+ * same as every resume upload always (re)triggers scoring regardless of
+ * whether a prior report exists — see readiness_reports' "current state
+ * only" semantics in server/supabase/schema.sql.
+ */
+async function maybeStartReadinessScoringAfterConnect(userId, githubUsername) {
+  if (!isSemanticEngineConfigured) return;
+
+  try {
+    const resume = await Resume.findByUserId(userId);
+    if (!resume || !resume.extraction_status?.startsWith("success")) return;
+
+    const skills = await Resume.getSkills(resume.id);
+    const skillNames = flattenSkillNames(skills);
+    if (skillNames.length === 0) return;
+
+    const user = await findById(userId);
+    if (!user) return;
+
+    await ReadinessReport.markPending(resume.id);
+    scoreReadinessInBackground(resume, user, githubUsername, skillNames);
+  } catch (err) {
+    console.error("[github] could not start readiness scoring after connect:", err.message);
+  }
+}
+
 /** Continue the "connect GitHub for evidence" flow (existing student, FR 9/10). */
 async function completeGithubConnect(req, res, userId, code) {
   const redirectBack = (query) =>
@@ -169,6 +207,11 @@ async function completeGithubConnect(req, res, userId, code) {
     });
 
     await GithubConnection.upsert(userId, profile.login);
+
+    // Never awaited — same "detached background job" pattern as
+    // resumeController's upload-time trigger; the student polls
+    // /resume/status for the result.
+    maybeStartReadinessScoringAfterConnect(userId, profile.login);
 
     return redirectBack({ connected: "1" });
   } catch {
