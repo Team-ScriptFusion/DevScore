@@ -12,6 +12,7 @@ import os
 from flask import Flask, jsonify, request
 
 import main
+import rf_model
 
 app = Flask(__name__)
 
@@ -122,6 +123,30 @@ def validate_route():
     except Exception as e:
         return jsonify({"error": "validation_failed", "detail": str(e)}), 500
     return jsonify(result)
+
+
+@app.post("/predict-trained")
+def predict_trained_route():
+    """
+    Predicts a readiness score with the trained RandomForestRegressor
+    (rf_model.py) from a ReadinessReport's `counts` block — a real, already
+    real-data-trained model, distinct from /fit-weights' synthetic-data
+    nnls pass. Comparison-only signal; see rf_model.py's caveats.
+    """
+    if not _authorized(request):
+        return jsonify({"error": "unauthorized"}), 401
+
+    body = request.get_json(silent=True) or {}
+    counts = body.get("counts")
+    if counts is None:
+        return jsonify({"error": "counts is required"}), 400
+
+    try:
+        features = rf_model.build_features(counts)
+        predicted_score = rf_model.predict_readiness(features)
+    except Exception as e:
+        return jsonify({"error": "predict_failed", "detail": str(e)}), 500
+    return jsonify({"predicted_score": predicted_score, "features": features, "model": "random_forest_v1"})
 
 
 if __name__ == "__main__":

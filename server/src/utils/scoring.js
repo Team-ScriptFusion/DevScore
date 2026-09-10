@@ -65,3 +65,14 @@ export async function computeWvr(weights, viByCategory, codeQualityVi) {
 export function validateWeights(testRows, weights, expertPairs) {
   return post('/validate', { test_rows: testRows, weights, expert_pairs: expertPairs });
 }
+
+/**
+ * Calls the scoring service's /predict-trained route — a real trained
+ * RandomForestRegressor (see services/scoring/rf_model.py), distinct from
+ * /fit-weights' synthetic-data nnls pass. `counts` is a ReadinessReport's
+ * `counts` block (claimed/verified/weakly_verified/unverified), already
+ * produced by semantic_engine for every scored resume.
+ */
+export function predictTrained(counts) {
+  return post('/predict-trained', { counts });
+}

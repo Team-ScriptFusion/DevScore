@@ -1,6 +1,11 @@
 import { Router } from 'express';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { runAssignSplit, runFitWeights, runValidate } from '../controllers/scoringController.js';
+import {
+  runAssignSplit,
+  runFitWeights,
+  runPredictTrained,
+  runValidate,
+} from '../controllers/scoringController.js';
 
 const router = Router();
 
@@ -8,5 +13,7 @@ const router = Router();
 router.post('/assign-split', requireAuth, requireRole('admin'), runAssignSplit);
 router.post('/fit-weights', requireAuth, requireRole('admin'), runFitWeights);
 router.post('/validate', requireAuth, requireRole('admin'), runValidate);
+// Trained RandomForestRegressor, sourced from real semantic_engine readiness_reports.
+router.post('/predict-trained', requireAuth, requireRole('admin'), runPredictTrained);
 
 export default router;

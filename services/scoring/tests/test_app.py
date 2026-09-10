@@ -120,3 +120,31 @@ def test_unauthorized_without_api_key(client, monkeypatch):
     monkeypatch.setattr(app_module, "API_KEY", "secret123")
     resp = client.post("/fit-weights", json={})
     assert resp.status_code == 401
+
+
+def test_predict_trained_requires_counts(client):
+    resp = client.post("/predict-trained", json={})
+    assert resp.status_code == 400
+
+
+def test_predict_trained_returns_result(client, monkeypatch):
+    monkeypatch.setattr(app_module.rf_model, "build_features", lambda counts: {"claimed_skills": 9})
+    monkeypatch.setattr(app_module.rf_model, "predict_readiness", lambda features: 88.5)
+    resp = client.post(
+        "/predict-trained",
+        json={"counts": {"claimed": 9, "verified": 8, "weakly_verified": 1, "unverified": 0}},
+    )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["predicted_score"] == 88.5
+    assert body["model"] == "random_forest_v1"
+
+
+def test_predict_trained_unexpected_error_returns_json_500(client, monkeypatch):
+    def raise_boom(counts):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(app_module.rf_model, "build_features", raise_boom)
+    resp = client.post("/predict-trained", json={"counts": {}})
+    assert resp.status_code == 500
+    assert resp.get_json()["error"] == "predict_failed"

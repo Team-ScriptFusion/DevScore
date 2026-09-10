@@ -1,6 +1,7 @@
 import * as ScoringInputs from '../models/ScoringInputs.js';
 import * as ScoringResults from '../models/ScoringResults.js';
-import { assignSplit, buildVi, fitWeights, validateWeights } from '../utils/scoring.js';
+import { findByResumeId } from '../models/ReadinessReport.js';
+import { assignSplit, buildVi, fitWeights, predictTrained, validateWeights } from '../utils/scoring.js';
 
 const DEFAULT_TRAIN_FRACTION = 0.7;
 
@@ -163,6 +164,46 @@ export async function runValidate(req, res, next) {
       { metric_name: 'mae', metric_value: result.mae, sample_size: result.sample_size },
     ]);
     res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * Admin-only: runs the trained RandomForestRegressor (rf_model.py) against
+ * one resume's already-computed semantic_engine readiness report, for
+ * comparison against the primary rule-based score. Sourced directly from
+ * `readiness_reports` (real, live data) — not the skill_verification/
+ * code_analysis_summary tables the rest of this controller uses, which
+ * don't exist on master (see rf_model.py's own caveats before citing this
+ * as a validated result).
+ */
+export async function runPredictTrained(req, res, next) {
+  try {
+    const resumeId = req.body?.resumeId;
+    if (!resumeId) {
+      return res.status(400).json({ error: 'resumeId is required' });
+    }
+
+    const readinessRow = await findByResumeId(resumeId);
+    if (!readinessRow || readinessRow.status !== 'success' || !readinessRow.report) {
+      return res.status(404).json({ error: 'No completed readiness report for this resume' });
+    }
+
+    let result;
+    try {
+      result = await predictTrained(readinessRow.report.counts || {});
+    } catch {
+      return next(serviceUnavailableError());
+    }
+
+    res.json({
+      resumeId,
+      actualScore: readinessRow.score,
+      predictedScore: result.predicted_score,
+      features: result.features,
+      model: result.model,
+    });
   } catch (err) {
     next(err);
   }
