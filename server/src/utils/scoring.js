@@ -67,8 +67,9 @@ export function validateWeights(testRows, weights, expertPairs) {
 }
 
 /**
- * Calls the scoring service's /predict-trained route — a real trained
- * RandomForestRegressor (see services/scoring/rf_model.py), distinct from
+ * Calls the scoring service's /predict-trained route — real trained models
+ * (DevScore ML Project 3: Linear Regression + tuned Random Forest, plus
+ * their ensemble; see services/scoring/rf_model.py), distinct from
  * /fit-weights' synthetic-data nnls pass. `counts` is a ReadinessReport's
  * `counts` block (claimed/verified/weakly_verified/unverified), already
  * produced by semantic_engine for every scored resume.
