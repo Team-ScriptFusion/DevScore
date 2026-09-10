@@ -46,6 +46,10 @@ export const env = {
     url: process.env.SEMANTIC_ENGINE_URL || 'http://localhost:5002',
     apiKey: process.env.SEMANTIC_ENGINE_API_KEY || '',
   },
+  scoring: {
+    url: process.env.SCORING_URL || 'http://localhost:5004',
+    apiKey: process.env.SCORING_API_KEY || '',
+  },
 };
 
 /** True only when the CV parser service URL is configured. */

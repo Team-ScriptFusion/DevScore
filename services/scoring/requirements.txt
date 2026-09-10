@@ -1,0 +1,10 @@
+flask==3.1.3
+gunicorn==26.0.0
+numpy==2.5.3
+scipy==1.18.1
+krippendorff==0.8.2
+# Pinned to match the version random_forest_model.joblib was actually
+# trained with (see rf_model.py) — scikit-learn warns on any mismatch when
+# unpickling a model, per its own model-persistence guidance.
+scikit-learn==1.6.1
+joblib==1.4.2
