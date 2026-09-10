@@ -129,7 +129,11 @@ def test_predict_trained_requires_counts(client):
 
 def test_predict_trained_returns_result(client, monkeypatch):
     monkeypatch.setattr(app_module.rf_model, "build_features", lambda counts: {"claimed_skills": 9})
-    monkeypatch.setattr(app_module.rf_model, "predict_readiness", lambda features: 88.5)
+    monkeypatch.setattr(
+        app_module.rf_model,
+        "predict_readiness",
+        lambda features: {"linear_regression": 88.5, "random_forest_tuned": 91.0, "ensemble": 89.75},
+    )
     resp = client.post(
         "/predict-trained",
         json={"counts": {"claimed": 9, "verified": 8, "weakly_verified": 1, "unverified": 0}},
@@ -137,7 +141,9 @@ def test_predict_trained_returns_result(client, monkeypatch):
     assert resp.status_code == 200
     body = resp.get_json()
     assert body["predicted_score"] == 88.5
-    assert body["model"] == "random_forest_v1"
+    assert body["ensemble_score"] == 89.75
+    assert body["random_forest_tuned_score"] == 91.0
+    assert body["model"] == "linear_regression_v2"
 
 
 def test_predict_trained_unexpected_error_returns_json_500(client, monkeypatch):

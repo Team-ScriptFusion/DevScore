@@ -128,10 +128,13 @@ def validate_route():
 @app.post("/predict-trained")
 def predict_trained_route():
     """
-    Predicts a readiness score with the trained RandomForestRegressor
-    (rf_model.py) from a ReadinessReport's `counts` block — a real, already
-    real-data-trained model, distinct from /fit-weights' synthetic-data
-    nnls pass. Comparison-only signal; see rf_model.py's caveats.
+    Predicts a readiness score with the trained models (rf_model.py,
+    DevScore ML Project 3) from a ReadinessReport's `counts` block — real,
+    already real-data-trained models, distinct from /fit-weights'
+    synthetic-data nnls pass. `predicted_score` is Linear Regression (the
+    project's chosen production model); `ensemble_score` and
+    `random_forest_tuned_score` are reported comparison signals, not the
+    headline number — see rf_model.py's caveats before citing either.
     """
     if not _authorized(request):
         return jsonify({"error": "unauthorized"}), 401
@@ -143,10 +146,18 @@ def predict_trained_route():
 
     try:
         features = rf_model.build_features(counts)
-        predicted_score = rf_model.predict_readiness(features)
+        scores = rf_model.predict_readiness(features)
     except Exception as e:
         return jsonify({"error": "predict_failed", "detail": str(e)}), 500
-    return jsonify({"predicted_score": predicted_score, "features": features, "model": "random_forest_v1"})
+    return jsonify(
+        {
+            "predicted_score": scores["linear_regression"],
+            "ensemble_score": scores["ensemble"],
+            "random_forest_tuned_score": scores["random_forest_tuned"],
+            "features": features,
+            "model": "linear_regression_v2",
+        }
+    )
 
 
 if __name__ == "__main__":
